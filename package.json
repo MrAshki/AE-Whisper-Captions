@@ -1,0 +1,9 @@
+{
+  "name": "ae-speech-subtitle-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "After Effects 2025 CEP panel for local speech transcription, AI subtitle cleanup, translation, SRT import/export, and AE subtitle layer import.",
+  "scripts": {
+    "check": "node --check js/app.js && node --check js/srt.js && node --check js/localOptimizer.js && node --check js/localServices.js && node --check js/aeBridge.js"
+  }
+}

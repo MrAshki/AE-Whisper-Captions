@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI字幕工坊</title>
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <main class="shell">
+        <header class="topbar">
+            <div>
+                <h1>AI字幕工坊</h1>
+                <p id="statusText">待命</p>
+            </div>
+            <div class="top-actions">
+                <button id="saveProjectBtn" type="button">保存草稿</button>
+                <button id="loadProjectBtn" type="button">打开草稿</button>
+                <input id="projectFileInput" class="hidden" type="file" accept=".json,application/json">
+            </div>
+        </header>
+
+        <section class="workspace">
+            <aside class="sidepanel">
+                <section class="panel-block">
+                    <h2>来源</h2>
+                    <label class="field">
+                        <span>音频/视频</span>
+                        <input id="mediaFileInput" type="file" accept="audio/*,video/*">
+                    </label>
+                    <label class="field">
+                        <span>媒体路径</span>
+                        <input id="mediaPathInput" type="text" placeholder="D:\video\audio.wav">
+                    </label>
+                    <div class="button-grid">
+                        <button id="transcribeBtn" type="button">本地转录</button>
+                        <button id="importSrtBtn" type="button">导入SRT</button>
+                        <button id="readAeBtn" type="button">读取AE文字层</button>
+                    </div>
+                    <input id="srtFileInput" class="hidden" type="file" accept=".srt,text/plain">
+                    <label class="checkline">
+                        <input id="detectBilingualInput" type="checkbox" checked>
+                        <span>双语行识别</span>
+                    </label>
+                    <label class="checkline">
+                        <input id="separateVocalsInput" type="checkbox">
+                        <span>先分离人声</span>
+                    </label>
+                </section>
+
+                <section class="panel-block">
+                    <h2>本地模型</h2>
+                    <label class="field">
+                        <span>引擎</span>
+                        <select id="localBackendInput">
+                            <option value="faster-whisper">faster-whisper</option>
+                            <option value="whisper.cpp">whisper.cpp</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Python</span>
+                        <input id="pythonPathInput" type="text" placeholder="python">
+                    </label>
+                    <label class="field">
+                        <span>模型</span>
+                        <input id="modelInput" type="text" value="large-v3-turbo">
+                    </label>
+                    <div class="field-row">
+                        <label class="field">
+                            <span>设备</span>
+                            <select id="deviceInput">
+                                <option value="auto">auto</option>
+                                <option value="cpu">cpu</option>
+                                <option value="cuda">cuda</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>精度</span>
+                            <select id="computeTypeInput">
+                                <option value="auto">auto</option>
+                                <option value="int8">int8</option>
+                                <option value="float16">float16</option>
+                                <option value="int8_float16">int8_float16</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="field">
+                        <span>语言</span>
+                        <input id="languageInput" type="text" placeholder="auto / zh / en">
+                    </label>
+                    <label class="field">
+                        <span>whisper.cpp程序</span>
+                        <input id="whisperCliInput" type="text" placeholder="whisper-cli.exe">
+                    </label>
+                    <label class="field">
+                        <span>whisper.cpp模型</span>
+                        <input id="whisperModelInput" type="text" placeholder="ggml-large-v3-turbo.bin">
+                    </label>
+                    <label class="field">
+                        <span>FFmpeg</span>
+                        <input id="ffmpegPathInput" type="text" placeholder="ffmpeg">
+                    </label>
+                </section>
+
+                <section class="panel-block">
+                    <h2>本地优化</h2>
+                    <label class="checkline">
+                        <input id="localTranslateInput" type="checkbox">
+                        <span>离线翻译</span>
+                    </label>
+                    <div class="field-row">
+                        <label class="field">
+                            <span>源语言</span>
+                            <input id="sourceLangInput" type="text" value="auto">
+                        </label>
+                        <label class="field">
+                            <span>目标语言</span>
+                            <input id="targetLangInput" type="text" value="zh">
+                        </label>
+                    </div>
+                    <label class="field">
+                        <span>最大字数</span>
+                        <input id="maxCharsInput" type="number" min="8" max="80" value="24">
+                    </label>
+                    <div class="button-grid">
+                        <button id="segmentBtn" type="button">自动断句</button>
+                        <button id="localOptimizeBtn" type="button">本地矫正翻译</button>
+                    </div>
+                </section>
+
+                <section class="panel-block">
+                    <h2>查找替换</h2>
+                    <label class="field">
+                        <span>查找</span>
+                        <input id="findInput" type="text">
+                    </label>
+                    <label class="field">
+                        <span>替换</span>
+                        <input id="replaceInput" type="text">
+                    </label>
+                    <button id="replaceBtn" type="button">全部替换</button>
+                </section>
+            </aside>
+
+            <section class="mainpanel">
+                <div class="toolbar">
+                    <div class="toolbar-group">
+                        <button id="addRowBtn" type="button">新增</button>
+                        <button id="deleteRowsBtn" type="button">删除</button>
+                        <button id="mergeRowsBtn" type="button">合并</button>
+                        <button id="splitRowBtn" type="button">拆分</button>
+                    </div>
+                    <div class="counter" id="captionCounter">0 条</div>
+                </div>
+
+                <div class="table-wrap">
+                    <table class="caption-table">
+                        <thead>
+                            <tr>
+                                <th class="select-col"></th>
+                                <th class="num-col">#</th>
+                                <th class="time-col">开始</th>
+                                <th class="time-col">结束</th>
+                                <th>原文</th>
+                                <th>译文</th>
+                            </tr>
+                        </thead>
+                        <tbody id="captionBody"></tbody>
+                    </table>
+                </div>
+
+                <section class="bottom-grid">
+                    <section class="panel-block style-block">
+                        <h2>样式 & 导入</h2>
+                        <div class="style-grid">
+                            <label class="field">
+                                <span>导入方式</span>
+                                <select id="layerModeInput">
+                                    <option value="multi">多图层</option>
+                                    <option value="single">单图层</option>
+                                </select>
+                            </label>
+                            <label class="field">
+                                <span>字幕内容</span>
+                                <select id="displayModeInput">
+                                    <option value="source">原文</option>
+                                    <option value="translation">译文</option>
+                                    <option value="source-top">双语·原文上</option>
+                                    <option value="translation-top">双语·译文上</option>
+                                </select>
+                            </label>
+                            <label class="field">
+                                <span>字体</span>
+                                <input id="fontInput" type="text" value="Microsoft YaHei">
+                            </label>
+                            <label class="field">
+                                <span>字号</span>
+                                <input id="fontSizeInput" type="number" min="8" max="260" value="64">
+                            </label>
+                            <label class="field">
+                                <span>填充</span>
+                                <input id="fillColorInput" type="color" value="#ffffff">
+                            </label>
+                            <label class="field">
+                                <span>描边</span>
+                                <input id="strokeColorInput" type="color" value="#000000">
+                            </label>
+                            <label class="field">
+                                <span>描边宽度</span>
+                                <input id="strokeWidthInput" type="number" min="0" max="32" value="4">
+                            </label>
+                            <label class="field">
+                                <span>位置X%</span>
+                                <input id="positionXInput" type="number" min="0" max="100" value="50">
+                            </label>
+                            <label class="field">
+                                <span>位置Y%</span>
+                                <input id="positionYInput" type="number" min="0" max="100" value="86">
+                            </label>
+                            <label class="checkline compact">
+                                <input id="shadowInput" type="checkbox" checked>
+                                <span>阴影</span>
+                            </label>
+                        </div>
+                        <div class="button-grid wide-actions">
+                            <button id="importAeBtn" type="button">一键导入AE</button>
+                            <button id="exportSrtBtn" type="button">导出SRT</button>
+                        </div>
+                    </section>
+
+                    <section class="panel-block log-block">
+                        <h2>日志</h2>
+                        <pre id="logOutput"></pre>
+                    </section>
+                </section>
+            </section>
+        </section>
+    </main>
+
+    <script src="./js/lib/CSInterface.js"></script>
+    <script src="./js/srt.js"></script>
+    <script src="./js/localOptimizer.js"></script>
+    <script src="./js/localServices.js"></script>
+    <script src="./js/aeBridge.js"></script>
+    <script src="./js/app.js"></script>
+</body>
+</html>

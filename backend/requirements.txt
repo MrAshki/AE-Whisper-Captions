@@ -1,0 +1,3 @@
+faster-whisper>=1.1.0
+demucs>=4.0.1
+argostranslate>=1.9.6

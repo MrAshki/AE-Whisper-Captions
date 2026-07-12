@@ -1,0 +1,59 @@
+# Operating system
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+*.bak
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+
+# Local media and generated subtitle output
+*.mp3
+*.wav
+*.m4a
+*.aac
+*.flac
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.srt
+*.ass
+*.vtt
+
+# Large local model files
+*.bin
+*.gguf
+*.onnx
+models/
+.cache/
+
+# Generated release packages
+*.zip
+*.7z
+*.rar
