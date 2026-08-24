@@ -1,22 +1,22 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AI字幕工坊</title>
+    <title>AI Subtitle Studio</title>
     <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
     <main class="shell">
         <header class="topbar">
             <div>
-                <h1>AI字幕工坊</h1>
-                <p id="statusText">待命</p>
+                <h1>AI Subtitle Studio</h1>
+                <p id="statusText">Ready</p>
             </div>
             <div class="top-actions">
-                <button id="saveProjectBtn" type="button">保存草稿</button>
-                <button id="loadProjectBtn" type="button">打开草稿</button>
+                <button id="saveProjectBtn" type="button">Save Draft</button>
+                <button id="loadProjectBtn" type="button">Open Draft</button>
                 <input id="projectFileInput" class="hidden" type="file" accept=".json,application/json">
             </div>
         </header>
@@ -24,35 +24,35 @@
         <section class="workspace">
             <aside class="sidepanel">
                 <section class="panel-block">
-                    <h2>来源</h2>
+                    <h2>Source</h2>
                     <label class="field">
-                        <span>音频/视频</span>
+                        <span>Audio / Video</span>
                         <input id="mediaFileInput" type="file" accept="audio/*,video/*">
                     </label>
                     <label class="field">
-                        <span>媒体路径</span>
-                        <input id="mediaPathInput" type="text" placeholder="D:\video\audio.wav">
+                        <span>Media Path</span>
+                        <input id="mediaPathInput" type="text" placeholder="C:\path\to\audio.wav">
                     </label>
                     <div class="button-grid">
-                        <button id="transcribeBtn" type="button">本地转录</button>
-                        <button id="importSrtBtn" type="button">导入SRT</button>
-                        <button id="readAeBtn" type="button">读取AE文字层</button>
+                        <button id="transcribeBtn" type="button">Local Transcribe</button>
+                        <button id="importSrtBtn" type="button">Import SRT</button>
+                        <button id="readAeBtn" type="button">Read AE Text Layers</button>
                     </div>
                     <input id="srtFileInput" class="hidden" type="file" accept=".srt,text/plain">
                     <label class="checkline">
                         <input id="detectBilingualInput" type="checkbox" checked>
-                        <span>双语行识别</span>
+                        <span>Detect Bilingual Lines</span>
                     </label>
                     <label class="checkline">
                         <input id="separateVocalsInput" type="checkbox">
-                        <span>先分离人声</span>
+                        <span>Separate Vocals First</span>
                     </label>
                 </section>
 
                 <section class="panel-block">
-                    <h2>本地模型</h2>
+                    <h2>Local Model</h2>
                     <label class="field">
-                        <span>引擎</span>
+                        <span>Engine</span>
                         <select id="localBackendInput">
                             <option value="faster-whisper">faster-whisper</option>
                             <option value="whisper.cpp">whisper.cpp</option>
@@ -63,12 +63,12 @@
                         <input id="pythonPathInput" type="text" placeholder="python">
                     </label>
                     <label class="field">
-                        <span>模型</span>
+                        <span>Model</span>
                         <input id="modelInput" type="text" value="large-v3-turbo">
                     </label>
                     <div class="field-row">
                         <label class="field">
-                            <span>设备</span>
+                            <span>Device</span>
                             <select id="deviceInput">
                                 <option value="auto">auto</option>
                                 <option value="cpu">cpu</option>
@@ -76,7 +76,7 @@
                             </select>
                         </label>
                         <label class="field">
-                            <span>精度</span>
+                            <span>Compute Type</span>
                             <select id="computeTypeInput">
                                 <option value="auto">auto</option>
                                 <option value="int8">int8</option>
@@ -86,15 +86,15 @@
                         </label>
                     </div>
                     <label class="field">
-                        <span>语言</span>
+                        <span>Language</span>
                         <input id="languageInput" type="text" placeholder="auto / zh / en">
                     </label>
                     <label class="field">
-                        <span>whisper.cpp程序</span>
+                        <span>whisper.cpp Program</span>
                         <input id="whisperCliInput" type="text" placeholder="whisper-cli.exe">
                     </label>
                     <label class="field">
-                        <span>whisper.cpp模型</span>
+                        <span>whisper.cpp Model</span>
                         <input id="whisperModelInput" type="text" placeholder="ggml-large-v3-turbo.bin">
                     </label>
                     <label class="field">
@@ -104,54 +104,82 @@
                 </section>
 
                 <section class="panel-block">
-                    <h2>本地优化</h2>
+                    <h2>Caption Grouping</h2>
+                    <div class="field-row">
+                        <label class="field">
+                            <span>Max Words</span>
+                            <input id="maxWordsInput" type="number" min="1" max="10" value="4">
+                        </label>
+                        <label class="field">
+                            <span>Max Characters</span>
+                            <input id="groupMaxCharsInput" type="number" min="8" max="80" value="28">
+                        </label>
+                    </div>
+                    <div class="field-row">
+                        <label class="field">
+                            <span>Pause Split</span>
+                            <input id="pauseSplitInput" type="number" min="0" max="3" step="0.05" value="0.35">
+                        </label>
+                        <label class="field">
+                            <span>Max Duration</span>
+                            <input id="maxDurationInput" type="number" min="0.5" max="10" step="0.1" value="2.5">
+                        </label>
+                    </div>
+                    <label class="field">
+                        <span>Min Duration</span>
+                        <input id="minDurationInput" type="number" min="0" max="2" step="0.1" value="0.4">
+                    </label>
+                </section>
+
+                <section class="panel-block">
+                    <h2>Local Optimize</h2>
                     <label class="checkline">
                         <input id="localTranslateInput" type="checkbox">
-                        <span>离线翻译</span>
+                        <span>Offline Translation</span>
                     </label>
                     <div class="field-row">
                         <label class="field">
-                            <span>源语言</span>
+                            <span>Source Language</span>
                             <input id="sourceLangInput" type="text" value="auto">
                         </label>
                         <label class="field">
-                            <span>目标语言</span>
+                            <span>Target Language</span>
                             <input id="targetLangInput" type="text" value="zh">
                         </label>
                     </div>
                     <label class="field">
-                        <span>最大字数</span>
+                        <span>Max Characters</span>
                         <input id="maxCharsInput" type="number" min="8" max="80" value="24">
                     </label>
                     <div class="button-grid">
-                        <button id="segmentBtn" type="button">自动断句</button>
-                        <button id="localOptimizeBtn" type="button">本地矫正翻译</button>
+                        <button id="segmentBtn" type="button">Auto Segment</button>
+                        <button id="localOptimizeBtn" type="button">Local Correct / Translate</button>
                     </div>
                 </section>
 
                 <section class="panel-block">
-                    <h2>查找替换</h2>
+                    <h2>Find / Replace</h2>
                     <label class="field">
-                        <span>查找</span>
+                        <span>Find</span>
                         <input id="findInput" type="text">
                     </label>
                     <label class="field">
-                        <span>替换</span>
+                        <span>Replace</span>
                         <input id="replaceInput" type="text">
                     </label>
-                    <button id="replaceBtn" type="button">全部替换</button>
+                    <button id="replaceBtn" type="button">Replace All</button>
                 </section>
             </aside>
 
             <section class="mainpanel">
                 <div class="toolbar">
                     <div class="toolbar-group">
-                        <button id="addRowBtn" type="button">新增</button>
-                        <button id="deleteRowsBtn" type="button">删除</button>
-                        <button id="mergeRowsBtn" type="button">合并</button>
-                        <button id="splitRowBtn" type="button">拆分</button>
+                        <button id="addRowBtn" type="button">Add</button>
+                        <button id="deleteRowsBtn" type="button">Delete</button>
+                        <button id="mergeRowsBtn" type="button">Merge</button>
+                        <button id="splitRowBtn" type="button">Split</button>
                     </div>
-                    <div class="counter" id="captionCounter">0 条</div>
+                    <div class="counter" id="captionCounter">0 lines</div>
                 </div>
 
                 <div class="table-wrap">
@@ -160,10 +188,10 @@
                             <tr>
                                 <th class="select-col"></th>
                                 <th class="num-col">#</th>
-                                <th class="time-col">开始</th>
-                                <th class="time-col">结束</th>
-                                <th>原文</th>
-                                <th>译文</th>
+                                <th class="time-col">Start</th>
+                                <th class="time-col">End</th>
+                                <th>Original</th>
+                                <th>Translation</th>
                             </tr>
                         </thead>
                         <tbody id="captionBody"></tbody>
@@ -172,65 +200,65 @@
 
                 <section class="bottom-grid">
                     <section class="panel-block style-block">
-                        <h2>样式 & 导入</h2>
+                        <h2>Style & Import</h2>
                         <div class="style-grid">
                             <label class="field">
-                                <span>导入方式</span>
+                                <span>Import Mode</span>
                                 <select id="layerModeInput">
-                                    <option value="multi">多图层</option>
-                                    <option value="single">单图层</option>
+                                    <option value="multi">Multiple Layers</option>
+                                    <option value="single">Single Layer</option>
                                 </select>
                             </label>
                             <label class="field">
-                                <span>字幕内容</span>
+                                <span>Subtitle Content</span>
                                 <select id="displayModeInput">
-                                    <option value="source">原文</option>
-                                    <option value="translation">译文</option>
-                                    <option value="source-top">双语·原文上</option>
-                                    <option value="translation-top">双语·译文上</option>
+                                    <option value="source">Original</option>
+                                    <option value="translation">Translation</option>
+                                    <option value="source-top">Bilingual - Original on Top</option>
+                                    <option value="translation-top">Bilingual - Translation on Top</option>
                                 </select>
                             </label>
                             <label class="field">
-                                <span>字体</span>
+                                <span>Font</span>
                                 <input id="fontInput" type="text" value="Microsoft YaHei">
                             </label>
                             <label class="field">
-                                <span>字号</span>
+                                <span>Font Size</span>
                                 <input id="fontSizeInput" type="number" min="8" max="260" value="64">
                             </label>
                             <label class="field">
-                                <span>填充</span>
+                                <span>Fill</span>
                                 <input id="fillColorInput" type="color" value="#ffffff">
                             </label>
                             <label class="field">
-                                <span>描边</span>
+                                <span>Stroke</span>
                                 <input id="strokeColorInput" type="color" value="#000000">
                             </label>
                             <label class="field">
-                                <span>描边宽度</span>
+                                <span>Stroke Width</span>
                                 <input id="strokeWidthInput" type="number" min="0" max="32" value="4">
                             </label>
                             <label class="field">
-                                <span>位置X%</span>
+                                <span>Position X %</span>
                                 <input id="positionXInput" type="number" min="0" max="100" value="50">
                             </label>
                             <label class="field">
-                                <span>位置Y%</span>
+                                <span>Position Y %</span>
                                 <input id="positionYInput" type="number" min="0" max="100" value="86">
                             </label>
                             <label class="checkline compact">
                                 <input id="shadowInput" type="checkbox" checked>
-                                <span>阴影</span>
+                                <span>Shadow</span>
                             </label>
                         </div>
                         <div class="button-grid wide-actions">
-                            <button id="importAeBtn" type="button">一键导入AE</button>
-                            <button id="exportSrtBtn" type="button">导出SRT</button>
+                            <button id="importAeBtn" type="button">Import to After Effects</button>
+                            <button id="exportSrtBtn" type="button">Export SRT</button>
                         </div>
                     </section>
 
                     <section class="panel-block log-block">
-                        <h2>日志</h2>
+                        <h2>Log</h2>
                         <pre id="logOutput"></pre>
                     </section>
                 </section>

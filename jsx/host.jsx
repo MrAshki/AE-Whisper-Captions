@@ -49,7 +49,7 @@ var AESubtitleAI = AESubtitleAI || {};
     function activeComp() {
         var item = app.project.activeItem;
         if (!item || !(item instanceof CompItem)) {
-            throw new Error("请先打开并选中一个 AE 合成");
+            throw new Error("Open and select an AE composition first");
         }
         return item;
     }

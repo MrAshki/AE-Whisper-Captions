@@ -52,7 +52,7 @@ if errorlevel 1 (
 echo.
 echo SUCCESS: faster-whisper is installed.
 echo.
-echo Restart After Effects, then click "本地转录" again.
+echo Restart After Effects, then click "Local Transcribe" again.
 echo.
 echo Note: the first transcription may download the model.
 echo.

@@ -7,7 +7,8 @@
             start: Number(caption.start) || 0,
             end: Number(caption.end) || 0,
             text: caption.text || "",
-            translation: caption.translation || ""
+            translation: caption.translation || "",
+            words: cloneWords(caption.words)
         };
     }
 
@@ -32,6 +33,176 @@
 
     function visibleLength(text) {
         return String(text || "").replace(/\s/g, "").length;
+    }
+
+    function unicodeLength(text) {
+        return Array.from(String(text || "").replace(/\s/g, "")).length;
+    }
+
+    function cloneWords(words) {
+        return normalizeWords(words);
+    }
+
+    function normalizeWord(word, previousWord) {
+        var text = normalizeText(word && word.text);
+        var start = Number(word && word.start);
+        var end = Number(word && word.end);
+        if (!text || !isFinite(start) || start < 0) {
+            return null;
+        }
+        if (!isFinite(end) || end <= start) {
+            end = start + 0.04;
+        }
+        if (previousWord && start < previousWord.end) {
+            start = previousWord.end;
+            if (end <= start) {
+                end = start + 0.04;
+            }
+        }
+        return {
+            text: text,
+            start: Math.round(start * 1000) / 1000,
+            end: Math.round(end * 1000) / 1000
+        };
+    }
+
+    function normalizeWords(words) {
+        var output = [];
+        (words || []).forEach(function (word) {
+            var normalized = normalizeWord(word, output[output.length - 1]);
+            if (normalized) {
+                output.push(normalized);
+            }
+        });
+        return output;
+    }
+
+    function flattenCaptionWords(captions) {
+        var words = [];
+        (captions || []).forEach(function (caption) {
+            if (caption && caption.words && caption.words.length) {
+                words = words.concat(caption.words);
+            }
+        });
+        return normalizeWords(words);
+    }
+
+    function groupingSettings(options) {
+        options = options || {};
+        return {
+            maxWords: Math.max(1, Math.min(10, Number(options.maxWords) || 4)),
+            maxChars: Math.max(1, Number(options.groupMaxChars) || Number(options.maxChars) || 28),
+            pauseSplit: Math.max(0, Number(options.pauseSplit) || 0.35),
+            maxDuration: Math.max(0.1, Number(options.maxDuration) || 2.5),
+            minDuration: Math.max(0, Number(options.minDuration) || 0.4)
+        };
+    }
+
+    function groupDuration(group) {
+        if (!group.length) {
+            return 0;
+        }
+        return Math.max(0, group[group.length - 1].end - group[0].start);
+    }
+
+    function groupText(group) {
+        return normalizeText(group.map(function (word) {
+            return word.text;
+        }).join(" "));
+    }
+
+    function groupCharCount(group) {
+        return unicodeLength(groupText(group));
+    }
+
+    function hasPhraseBoundary(text) {
+        return /[.!?;:،؛؟。！？；：]["')\]}»”]*$/.test(String(text || "").trim());
+    }
+
+    function shouldSplitBeforeNext(group, nextWord, settings) {
+        if (!group.length || !nextWord) {
+            return false;
+        }
+        var last = group[group.length - 1];
+        var withNext = group.concat([nextWord]);
+        var pause = Math.max(0, nextWord.start - last.end);
+        var hardLimit = group.length >= settings.maxWords ||
+            groupCharCount(withNext) > settings.maxChars ||
+            groupDuration(withNext) > settings.maxDuration;
+        var naturalLimit = pause >= settings.pauseSplit || hasPhraseBoundary(last.text);
+        if (hardLimit) {
+            return group.length >= settings.maxWords || groupDuration(group) >= settings.minDuration;
+        }
+        return naturalLimit && groupDuration(group) >= settings.minDuration;
+    }
+
+    function mergeTinyGroups(groups, settings) {
+        var output = [];
+        groups.forEach(function (group) {
+            if (!group.length) {
+                return;
+            }
+            var duration = groupDuration(group);
+            var previous = output[output.length - 1];
+            if (previous && group.length === 1 && duration < settings.minDuration) {
+                var pause = Math.max(0, group[0].start - previous[previous.length - 1].end);
+                if (pause < settings.pauseSplit &&
+                        previous.length + group.length <= settings.maxWords &&
+                        groupCharCount(previous.concat(group)) <= settings.maxChars) {
+                    output[output.length - 1] = previous.concat(group);
+                    return;
+                }
+            }
+            output.push(group);
+        });
+
+        for (var i = 0; i < output.length - 1; i += 1) {
+            var current = output[i];
+            var next = output[i + 1];
+            if (current.length === 1 && groupDuration(current) < settings.minDuration) {
+                var nextPause = Math.max(0, next[0].start - current[current.length - 1].end);
+                if (nextPause < settings.pauseSplit &&
+                        current.length + next.length <= settings.maxWords &&
+                        groupCharCount(current.concat(next)) <= settings.maxChars) {
+                    output[i + 1] = current.concat(next);
+                    output.splice(i, 1);
+                    i -= 1;
+                }
+            }
+        }
+        return output;
+    }
+
+    function captionFromWords(words) {
+        var cleanWords = normalizeWords(words);
+        return {
+            id: makeId(),
+            start: cleanWords[0].start,
+            end: Math.max(cleanWords[0].start + 0.04, cleanWords[cleanWords.length - 1].end),
+            text: groupText(cleanWords),
+            translation: "",
+            words: cleanWords
+        };
+    }
+
+    function groupWords(words, options) {
+        var sourceWords = normalizeWords(words);
+        var settings = groupingSettings(options);
+        var groups = [];
+        var current = [];
+        sourceWords.forEach(function (word) {
+            if (shouldSplitBeforeNext(current, word, settings)) {
+                groups.push(current);
+                current = [];
+            }
+            current.push(word);
+        });
+        if (current.length) {
+            groups.push(current);
+        }
+        return mergeTinyGroups(groups, settings).filter(function (group) {
+            return group.length;
+        }).map(captionFromWords);
     }
 
     function splitLongPiece(piece, maxChars) {
@@ -147,8 +318,15 @@
         });
     }
 
-    function segment(captions, options) {
+    function segment(captions, options, sourceWords) {
         options = options || {};
+        if (sourceWords && sourceWords.length) {
+            return groupWords(sourceWords, options);
+        }
+        var captionWords = flattenCaptionWords(captions);
+        if (captionWords.length) {
+            return groupWords(captionWords, options);
+        }
         var maxChars = Number(options.maxChars) || 24;
         var output = [];
         cleanCaptions(captions).forEach(function (caption) {
@@ -157,15 +335,15 @@
         return output;
     }
 
-    function optimize(captions, options, onLog) {
+    function optimize(captions, options, onLog, sourceWords) {
         options = options || {};
-        var optimized = segment(captions, options);
+        var optimized = segment(captions, options, sourceWords);
         if (!options.translate) {
             return Promise.resolve(optimized);
         }
         if (!global.LocalServices || typeof global.LocalServices.translateOffline !== "function") {
             if (onLog) {
-                onLog("离线翻译模块未载入，已完成断句和清理。");
+                onLog("Offline translation module is not loaded. Segmentation and cleanup are complete.");
             }
             return Promise.resolve(optimized);
         }
@@ -183,7 +361,7 @@
             return optimized;
         }).catch(function (error) {
             if (onLog) {
-                onLog("离线翻译未完成：" + (error && error.message ? error.message : error));
+                onLog("Offline translation did not complete: " + (error && error.message ? error.message : error));
             }
             return optimized;
         });
@@ -191,6 +369,8 @@
 
     global.LocalOptimizer = {
         cleanCaptions: cleanCaptions,
+        groupWords: groupWords,
+        normalizeWords: normalizeWords,
         segment: segment,
         optimize: optimize,
         normalizeText: normalizeText,

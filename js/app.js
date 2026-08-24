@@ -3,6 +3,7 @@
 
     var state = {
         captions: [],
+        sourceWords: [],
         mediaPath: "",
         selected: {}
     };
@@ -28,6 +29,11 @@
         "sourceLangInput",
         "targetLangInput",
         "maxCharsInput",
+        "maxWordsInput",
+        "groupMaxCharsInput",
+        "pauseSplitInput",
+        "maxDurationInput",
+        "minDurationInput",
         "layerModeInput",
         "displayModeInput",
         "fontInput",
@@ -44,7 +50,7 @@
         restoreSettings();
         bindEvents();
         render();
-        log("插件已就绪。");
+        log("Plugin is ready.");
     }
 
     function bindEvents() {
@@ -52,7 +58,7 @@
             var file = event.target.files && event.target.files[0];
             state.mediaPath = file ? (file.path || file.name) : "";
             $("mediaPathInput").value = state.mediaPath;
-            setStatus(state.mediaPath ? "已选择：" + state.mediaPath : "待命");
+            setStatus(state.mediaPath ? "Selected: " + state.mediaPath : "Ready");
             persistSettings();
         });
 
@@ -108,6 +114,11 @@
             sourceLang: $("sourceLangInput").value.trim() || "auto",
             targetLang: $("targetLangInput").value.trim() || "zh",
             maxChars: Number($("maxCharsInput").value) || 24,
+            maxWords: Number($("maxWordsInput").value) || 4,
+            groupMaxChars: Number($("groupMaxCharsInput").value) || 28,
+            pauseSplit: Number($("pauseSplitInput").value) || 0.35,
+            maxDuration: Number($("maxDurationInput").value) || 2.5,
+            minDuration: Number($("minDurationInput").value) || 0.4,
             layerMode: $("layerModeInput").value,
             displayMode: $("displayModeInput").value,
             font: $("fontInput").value.trim(),
@@ -169,7 +180,7 @@
                 $("mediaPathInput").value = state.mediaPath;
             }
         } catch (error) {
-            log("设置读取失败：" + error.message);
+            log("Failed to read settings: " + error.message);
         }
     }
 
@@ -192,7 +203,7 @@
             bindRow(row, caption);
             body.appendChild(row);
         });
-        $("captionCounter").textContent = state.captions.length + " 条";
+        $("captionCounter").textContent = state.captions.length + " lines";
     }
 
     function bindRow(row, caption) {
@@ -230,15 +241,25 @@
         });
     }
 
-    function replaceCaptions(captions) {
+    function replaceCaptions(captions, options) {
+        options = options || {};
+        if (options.clearSourceWords) {
+            state.sourceWords = [];
+        } else if (options.sourceWords) {
+            state.sourceWords = global.LocalOptimizer.normalizeWords(options.sourceWords);
+        }
         state.captions = captions.map(function (caption) {
-            return {
+            var row = {
                 id: caption.id || global.LocalOptimizer.makeId(),
                 start: Number(caption.start) || 0,
                 end: Number(caption.end) || 0,
                 text: caption.text || "",
                 translation: caption.translation || ""
             };
+            if (caption.words && caption.words.length) {
+                row.words = global.LocalOptimizer.normalizeWords(caption.words);
+            }
+            return row;
         });
         state.selected = {};
         sortCaptions();
@@ -255,11 +276,11 @@
             var captions = global.SRT.parse(reader.result, {
                 detectBilingual: $("detectBilingualInput").checked
             });
-            replaceCaptions(captions);
+            replaceCaptions(captions, { clearSourceWords: true });
             state.mediaPath = file.path || state.mediaPath;
             $("mediaPathInput").value = state.mediaPath;
-            setStatus("已导入 SRT：" + captions.length + " 条");
-            log("SRT 导入完成：" + captions.length + " 条。");
+            setStatus("Imported SRT: " + captions.length + " lines");
+            log("SRT import complete: " + captions.length + " lines.");
         };
         reader.readAsText(file, "utf-8");
         event.target.value = "";
@@ -270,56 +291,67 @@
         var inputPath = $("mediaPathInput").value.trim() || state.mediaPath;
         state.mediaPath = inputPath;
         if (!inputPath) {
-            setStatus("请先选择音频/视频");
+            setStatus("Select an audio or video file first");
             return;
         }
 
-        setBusy("本地处理中...");
+        setBusy("Processing locally...");
         Promise.resolve().then(function () {
             if (!settings.separateVocals) {
                 return inputPath;
             }
-            log("开始人声分离。");
+            log("Starting vocal separation.");
             return global.LocalServices.separateVocals(inputPath, settings, log);
         }).then(function (audioPath) {
-            log("开始本地转录。");
+            log("Starting local transcription.");
             return global.LocalServices.transcribe(audioPath, settings, log);
-        }).then(function (captions) {
-            replaceCaptions(global.LocalOptimizer.segment(captions, settings));
-            setStatus("转录完成：" + state.captions.length + " 条");
-            log("转录完成。");
+        }).then(function (result) {
+            var captions;
+            if (result && result.sourceWords && result.sourceWords.length) {
+                state.sourceWords = global.LocalOptimizer.normalizeWords(result.sourceWords);
+                captions = global.LocalOptimizer.groupWords(state.sourceWords, settings);
+                replaceCaptions(captions, { sourceWords: state.sourceWords });
+                log("Word timeline loaded: " + state.sourceWords.length + " words.");
+            } else {
+                state.sourceWords = [];
+                captions = global.LocalOptimizer.segment(result || [], settings);
+                replaceCaptions(captions, { clearSourceWords: true });
+            }
+            setStatus("Transcription complete: " + state.captions.length + " lines");
+            log("Transcription complete.");
         }).catch(function (error) {
-            setStatus("转录失败");
+            setStatus("Transcription failed");
             logError(error);
         });
     }
 
     function readAeTextLayers() {
-        setBusy("读取 AE 合成...");
+        setBusy("Reading AE composition...");
         global.AEBridge.readTextLayers().then(function (captions) {
-            replaceCaptions(captions);
-            setStatus("已读取 AE 文字层：" + captions.length + " 条");
+            replaceCaptions(captions, { clearSourceWords: true });
+            setStatus("Read AE text layers: " + captions.length + " lines");
         }).catch(function (error) {
-            setStatus("读取失败");
+            setStatus("Read failed");
             logError(error);
         });
     }
 
     function runSegmentation() {
         var settings = getSettings();
-        replaceCaptions(global.LocalOptimizer.segment(state.captions, settings));
-        setStatus("断句完成：" + state.captions.length + " 条");
-        log("本地断句完成。");
+        var captions = global.LocalOptimizer.segment(state.captions, settings, state.sourceWords);
+        replaceCaptions(captions, state.sourceWords.length ? { sourceWords: state.sourceWords } : {});
+        setStatus("Segmentation complete: " + state.captions.length + " lines");
+        log(state.sourceWords.length ? "Regrouped from word timeline." : "Local segmentation complete.");
     }
 
     function runLocalOptimize() {
         var settings = getSettings();
-        setBusy(settings.translate ? "本地优化/翻译..." : "本地优化...");
-        global.LocalOptimizer.optimize(state.captions, settings, log).then(function (captions) {
-            replaceCaptions(captions);
-            setStatus("本地优化完成：" + captions.length + " 条");
+        setBusy(settings.translate ? "Local optimize / translate..." : "Local optimize...");
+        global.LocalOptimizer.optimize(state.captions, settings, log, state.sourceWords).then(function (captions) {
+            replaceCaptions(captions, state.sourceWords.length ? { sourceWords: state.sourceWords } : {});
+            setStatus("Local optimize complete: " + captions.length + " lines");
         }).catch(function (error) {
-            setStatus("本地优化失败");
+            setStatus("Local optimize failed");
             logError(error);
         });
     }
@@ -336,7 +368,7 @@
             caption.translation = (caption.translation || "").replace(pattern, replacement);
         });
         render();
-        log("替换完成。");
+        log("Replace complete.");
     }
 
     function addRow() {
@@ -377,7 +409,10 @@
             start: selected[0].start,
             end: selected[selected.length - 1].end,
             text: selected.map(function (caption) { return caption.text; }).filter(Boolean).join(" "),
-            translation: selected.map(function (caption) { return caption.translation; }).filter(Boolean).join(" ")
+            translation: selected.map(function (caption) { return caption.translation; }).filter(Boolean).join(" "),
+            words: global.LocalOptimizer.normalizeWords(selected.reduce(function (words, caption) {
+                return words.concat(caption.words || []);
+            }, []))
         };
         state.captions = state.captions.filter(function (caption) {
             return !state.selected[caption.id];
@@ -408,17 +443,17 @@
 
     function importToAe() {
         var settings = getSettings();
-        setBusy("导入 AE...");
+        setBusy("Importing to AE...");
         global.AEBridge.importCaptions({
             captions: state.captions,
             mode: settings.layerMode,
             displayMode: settings.displayMode,
             style: styleSettings(settings)
         }).then(function (result) {
-            setStatus("已导入 AE：" + result.count + " 条");
-            log("AE 导入完成。");
+            setStatus("Imported to AE: " + result.count + " lines");
+            log("AE import complete.");
         }).catch(function (error) {
-            setStatus("AE 导入失败");
+            setStatus("AE import failed");
             logError(error);
         });
     }
@@ -431,10 +466,10 @@
         var text = global.SRT.serialize(state.captions, settings.displayMode);
         try {
             global.LocalServices.writeText(path, text);
-            setStatus("已导出 SRT");
-            log("已导出：" + path);
+            setStatus("Exported SRT");
+            log("Exported: " + path);
         } catch (error) {
-            setStatus("导出失败");
+            setStatus("Export failed");
             logError(error);
         }
     }
@@ -443,15 +478,16 @@
         var base = global.LocalServices.basenameWithoutExt(state.mediaPath);
         var path = global.LocalServices.defaultExportPath(base + "_caption_project", ".json");
         var payload = {
-            version: 1,
+            version: 2,
             mediaPath: state.mediaPath,
+            sourceWords: state.sourceWords,
             captions: state.captions,
             settings: getSettings()
         };
         try {
             global.LocalServices.writeText(path, JSON.stringify(payload, null, 2));
-            setStatus("草稿已保存");
-            log("草稿已保存：" + path);
+            setStatus("Draft saved");
+            log("Draft saved: " + path);
         } catch (error) {
             logError(error);
         }
@@ -467,9 +503,9 @@
             try {
                 var payload = JSON.parse(reader.result);
                 state.mediaPath = payload.mediaPath || "";
-                replaceCaptions(payload.captions || []);
-                setStatus("草稿已打开");
-                log("草稿已打开：" + (file.path || file.name));
+                replaceCaptions(payload.captions || [], { sourceWords: payload.sourceWords || [] });
+                setStatus("Draft opened");
+                log("Draft opened: " + (file.path || file.name));
             } catch (error) {
                 logError(error);
             }
@@ -499,10 +535,10 @@
     function logError(error) {
         var message = error && error.message ? error.message : String(error);
         if (message.indexOf("No module named 'faster_whisper'") !== -1 || message.indexOf('No module named "faster_whisper"') !== -1) {
-            log("错误：当前 Python 没有安装 faster-whisper。请在插件文件夹里双击 INSTALL_SPEECH_DEPS.cmd，安装完成后重启 AE。");
+            log("Error: faster-whisper is not installed in the current Python environment. Double-click INSTALL_SPEECH_DEPS.cmd in the extension folder, then restart AE.");
             return;
         }
-        log("错误：" + message);
+        log("Error: " + message);
     }
 
     function escapeHtml(value) {

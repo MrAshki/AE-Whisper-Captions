@@ -8,7 +8,7 @@
         if (global.cep_node && typeof global.cep_node.require === "function") {
             return global.cep_node.require(name);
         }
-        throw new Error("未启用 CEP Node 环境");
+        throw new Error("The CEP Node environment is not enabled");
     }
 
     function extensionDir() {
@@ -56,7 +56,7 @@
         var childProcess = nodeRequire("child_process");
         return new Promise(function (resolve, reject) {
             if (!command) {
-                reject(new Error("缺少可执行程序路径"));
+                reject(new Error("Missing executable path"));
                 return;
             }
 
@@ -92,7 +92,7 @@
                 if (code === 0) {
                     resolve({ stdout: stdout, stderr: stderr });
                 } else {
-                    reject(new Error((stderr || stdout || "进程失败").trim() + " (code " + code + ")"));
+                    reject(new Error((stderr || stdout || "Process failed").trim() + " (code " + code + ")"));
                 }
             });
         });
@@ -113,9 +113,79 @@
         return fs.readFileSync(filePath, "utf8");
     }
 
+    function fileExists(filePath) {
+        var fs = nodeRequire("fs");
+        return fs.existsSync(filePath);
+    }
+
     function writeText(filePath, text) {
         var fs = nodeRequire("fs");
         fs.writeFileSync(filePath, text, "utf8");
+    }
+
+    function parseClockSeconds(value) {
+        var match = String(value || "").trim().match(/(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/);
+        if (!match) {
+            return NaN;
+        }
+        var ms = match[4];
+        while (ms.length < 3) {
+            ms += "0";
+        }
+        return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(ms.slice(0, 3)) / 1000;
+    }
+
+    function normalizedWordFromSegment(segment, previousWord) {
+        var text = String(segment && segment.text ? segment.text : "").trim();
+        if (!text) {
+            return null;
+        }
+
+        var start = NaN;
+        var end = NaN;
+        if (segment.offsets) {
+            start = Number(segment.offsets.from) / 1000;
+            end = Number(segment.offsets.to) / 1000;
+        }
+        if (!isFinite(start) || !isFinite(end)) {
+            start = parseClockSeconds(segment.timestamps && segment.timestamps.from);
+            end = parseClockSeconds(segment.timestamps && segment.timestamps.to);
+        }
+
+        if (!isFinite(start) || start < 0) {
+            return null;
+        }
+        if (!isFinite(end) || end <= start) {
+            end = start + 0.04;
+        }
+        if (previousWord && start < previousWord.end) {
+            start = previousWord.end;
+            if (end <= start) {
+                end = start + 0.04;
+            }
+        }
+
+        return {
+            text: text,
+            start: Math.round(start * 1000) / 1000,
+            end: Math.round(end * 1000) / 1000
+        };
+    }
+
+    function parseWhisperJsonWords(filePath) {
+        var payload = readJson(filePath);
+        var segments = payload && payload.transcription;
+        var words = [];
+        if (!Array.isArray(segments)) {
+            return words;
+        }
+        segments.forEach(function (segment) {
+            var word = normalizedWordFromSegment(segment, words[words.length - 1]);
+            if (word) {
+                words.push(word);
+            }
+        });
+        return words;
     }
 
     function transcribeFasterWhisper(inputPath, settings, onLog) {
@@ -139,7 +209,7 @@
         return spawnProcess(python, args, onLog).then(function () {
             var payload = readJson(output);
             if (!payload.ok) {
-                throw new Error(payload.error || "本地转录失败");
+                throw new Error(payload.error || "Local transcription failed");
             }
             return payload.captions || [];
         });
@@ -167,13 +237,17 @@
 
     function transcribeWhisperCpp(inputPath, settings, onLog) {
         if (!settings.whisperCli || !settings.whisperModel) {
-            return Promise.reject(new Error("whisper.cpp 需要填写程序路径和模型路径"));
+            return Promise.reject(new Error("whisper.cpp requires program and model paths"));
         }
         var outputBase = tempFile("").replace(/\.$/, "");
         return convertToWav(inputPath, settings, onLog).then(function (wavPath) {
             var args = [
                 "-m", settings.whisperModel,
                 "-f", wavPath,
+                "-oj",
+                "-ojf",
+                "-sow",
+                "-ml", "1",
                 "-osrt",
                 "-of", outputBase
             ];
@@ -182,6 +256,24 @@
             }
             return spawnProcess(settings.whisperCli, args, onLog);
         }).then(function () {
+            var jsonPath = outputBase + ".json";
+            if (fileExists(jsonPath)) {
+                try {
+                    var sourceWords = parseWhisperJsonWords(jsonPath);
+                    if (sourceWords.length) {
+                        return { sourceWords: sourceWords };
+                    }
+                    if (onLog) {
+                        onLog("Word-level JSON did not contain valid words. Falling back to SRT segments.");
+                    }
+                } catch (jsonError) {
+                    if (onLog) {
+                        onLog("Could not parse word-level JSON. Falling back to SRT segments: " + jsonError.message);
+                    }
+                }
+            } else if (onLog) {
+                onLog("Word-level JSON was not created. Falling back to SRT segments.");
+            }
             return global.SRT.parse(readText(outputBase + ".srt"), { detectBilingual: false });
         });
     }
@@ -189,7 +281,7 @@
     function transcribe(inputPath, settings, onLog) {
         settings = settings || {};
         if (!inputPath) {
-            return Promise.reject(new Error("请先选择音频或视频文件"));
+            return Promise.reject(new Error("Select an audio or video file first"));
         }
         if (settings.backend === "whisper.cpp") {
             return transcribeWhisperCpp(inputPath, settings, onLog);
@@ -214,7 +306,7 @@
         return spawnProcess(python, args, onLog).then(function () {
             var payload = readJson(output);
             if (!payload.ok) {
-                throw new Error(payload.error || "人声分离失败");
+                throw new Error(payload.error || "Vocal separation failed");
             }
             return payload.vocals;
         });
@@ -238,7 +330,7 @@
         ], onLog).then(function () {
             var payload = readJson(output);
             if (!payload.ok) {
-                throw new Error(payload.error || "离线翻译失败");
+                throw new Error(payload.error || "Offline translation failed");
             }
             return payload.translations || [];
         });

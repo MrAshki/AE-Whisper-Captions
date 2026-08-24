@@ -14,6 +14,11 @@ Desktop.ini
 *.tmp
 *.temp
 *.bak
+work/
+tmp/
+temp/
+.env
+.env.*
 
 # Python
 __pycache__/
@@ -45,6 +50,9 @@ pnpm-lock.yaml
 *.srt
 *.ass
 *.vtt
+*_caption_project.json
+*_source.json
+*_translation.json
 
 # Large local model files
 *.bin

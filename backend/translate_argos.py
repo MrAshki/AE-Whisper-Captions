@@ -51,7 +51,7 @@ def main():
         source_lang = next((lang for lang in installed if lang.code == source_code), None)
         target_lang = next((lang for lang in installed if lang.code == target_code), None)
         if not source_lang or not target_lang:
-            raise RuntimeError(f"Argos Translate 未安装 {source_code}->{target_code} 离线语言包")
+            raise RuntimeError(f"Argos Translate does not have the offline language package installed: {source_code}->{target_code}")
 
         translation = source_lang.get_translation(target_lang)
         translations = [translation.translate(text or "") for text in texts]

@@ -25,7 +25,7 @@
         if (typeof callback === "function") {
             callback(JSON.stringify({
                 ok: false,
-                error: "未在 Adobe CEP 环境中运行"
+                error: "Not running in the Adobe CEP environment"
             }));
         }
     };

@@ -17,14 +17,14 @@
                 try {
                     data = JSON.parse(result);
                 } catch (error) {
-                    reject(new Error(result || "AE 返回了无法解析的数据"));
+                    reject(new Error(result || "AE returned data that could not be parsed"));
                     return;
                 }
 
                 if (data && data.ok) {
                     resolve(data.data);
                 } else {
-                    reject(new Error((data && data.error) || "AE 操作失败"));
+                    reject(new Error((data && data.error) || "AE operation failed"));
                 }
             });
         });

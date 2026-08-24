@@ -44,7 +44,7 @@ def main():
         subprocess.run(command, check=True)
         vocals = find_vocals(args.outdir)
         if not vocals:
-            raise RuntimeError("Demucs 已运行，但没有找到 vocals.wav")
+            raise RuntimeError("Demucs ran, but vocals.wav was not found")
         write_payload(args.output, {"ok": True, "vocals": vocals})
         print(f"Vocals: {vocals}", flush=True)
     except Exception as error:
