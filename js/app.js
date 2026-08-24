@@ -36,6 +36,7 @@
         "minDurationInput",
         "wordHighlightEnabledInput",
         "wordHighlightColorInput",
+        "wordHighlightScaleInput",
         "layerModeInput",
         "displayModeInput",
         "fontInput",
@@ -123,6 +124,7 @@
             minDuration: Number($("minDurationInput").value) || 0.4,
             wordHighlightEnabled: $("wordHighlightEnabledInput").checked,
             wordHighlightColor: $("wordHighlightColorInput").value || "#FFD54A",
+            wordHighlightScale: Number($("wordHighlightScaleInput").value) || 112,
             layerMode: $("layerModeInput").value,
             displayMode: $("displayModeInput").value,
             font: $("fontInput").value.trim(),
@@ -454,7 +456,8 @@
             displayMode: settings.displayMode,
             wordHighlight: {
                 enabled: settings.wordHighlightEnabled,
-                color: settings.wordHighlightColor
+                color: settings.wordHighlightColor,
+                scale: settings.wordHighlightScale
             },
             style: styleSettings(settings)
         }).then(function (result) {

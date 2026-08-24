@@ -107,9 +107,15 @@ var AESubtitleAI = AESubtitleAI || {};
 
     function normalizedHighlight(payload) {
         payload = payload || {};
+        var scale = Number(payload.scale);
+        if (!isFinite(scale)) {
+            scale = 112;
+        }
+        scale = Math.max(100, Math.min(160, scale));
         return {
             enabled: !!payload.enabled,
-            color: payload.color || "#FFD54A"
+            color: payload.color || "#FFD54A",
+            scale: scale
         };
     }
 
@@ -251,6 +257,9 @@ var AESubtitleAI = AESubtitleAI || {};
             var animatorProps = animator.property("ADBE Text Animator Properties");
             var fill = animatorProps.addProperty("ADBE Text Fill Color");
             fill.setValue(hexToRgb(highlight.color, [1, 0.835294, 0.290196]));
+            if (highlight.scale > 100) {
+                animatorProps.addProperty("ADBE Text Scale 3D").setValue([highlight.scale, highlight.scale, 100]);
+            }
 
             var selectors = animator.property("ADBE Text Selectors");
             var selector = selectors.addProperty("ADBE Text Selector");
@@ -293,6 +302,25 @@ var AESubtitleAI = AESubtitleAI || {};
         }
     }
 
+    function applyWholeLayerTextScale(layer, highlight) {
+        if (!highlight.enabled || highlight.scale <= 100) {
+            return false;
+        }
+        var animator = null;
+        try {
+            var textProps = layer.property("ADBE Text Properties");
+            var animators = textProps.property("ADBE Text Animators");
+            animator = animators.addProperty("ADBE Text Animator");
+            animator.name = "Active Word Scale";
+            var animatorProps = animator.property("ADBE Text Animator Properties");
+            animatorProps.addProperty("ADBE Text Scale 3D").setValue([highlight.scale, highlight.scale, 100]);
+            return true;
+        } catch (error) {
+            removeProperty(animator);
+            return false;
+        }
+    }
+
     function addMultiLayerCaptions(comp, captions, displayMode, style, highlight) {
         var count = 0;
         highlight = normalizedHighlight(highlight);
@@ -309,6 +337,7 @@ var AESubtitleAI = AESubtitleAI || {};
             var words = validCaptionWords(caption);
             if (highlight.enabled && words.length === 1) {
                 applyTextStyle(layer, text, fillStyle(style, highlight.color), comp);
+                applyWholeLayerTextScale(layer, highlight);
             } else {
                 applyTextStyle(layer, text, style, comp);
                 if (highlight.enabled && words.length > 1) {
