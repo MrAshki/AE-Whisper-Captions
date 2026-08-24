@@ -85,6 +85,54 @@ var AESubtitleAI = AESubtitleAI || {};
         ];
     }
 
+    function finiteNumber(value) {
+        var number = Number(value);
+        return isFinite(number) ? number : null;
+    }
+
+    function clampTime(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    function fillStyle(style, fillColor) {
+        var copy = {};
+        for (var key in style) {
+            if (style.hasOwnProperty(key)) {
+                copy[key] = style[key];
+            }
+        }
+        copy.fillColor = fillColor;
+        return copy;
+    }
+
+    function normalizedHighlight(payload) {
+        payload = payload || {};
+        return {
+            enabled: !!payload.enabled,
+            color: payload.color || "#FFD54A"
+        };
+    }
+
+    function validCaptionWords(caption) {
+        var words = [];
+        var source = caption && caption.words ? caption.words : [];
+        for (var i = 0; i < source.length; i += 1) {
+            var word = source[i] || {};
+            var text = String(word.text || "").replace(/^\s+|\s+$/g, "");
+            var start = finiteNumber(word.start);
+            var end = finiteNumber(word.end);
+            if (!text || start === null || end === null || end <= start) {
+                continue;
+            }
+            words.push({
+                text: text,
+                start: start,
+                end: end
+            });
+        }
+        return words;
+    }
+
     function displayText(caption, mode) {
         var source = caption.text || "";
         var translation = caption.translation || "";
@@ -166,8 +214,88 @@ var AESubtitleAI = AESubtitleAI || {};
         } catch (error) {}
     }
 
-    function addMultiLayerCaptions(comp, captions, displayMode, style) {
+    function setHoldKeys(prop) {
+        if (!prop || !prop.numKeys) {
+            return;
+        }
+        for (var i = 1; i <= prop.numKeys; i += 1) {
+            try {
+                prop.setInterpolationTypeAtKey(i, KeyframeInterpolationType.HOLD, KeyframeInterpolationType.HOLD);
+            } catch (error) {}
+        }
+    }
+
+    function removeProperty(prop) {
+        try {
+            if (prop && prop.remove) {
+                prop.remove();
+            }
+        } catch (error) {}
+    }
+
+    function applyWordHighlight(layer, caption, highlight) {
+        var words = validCaptionWords(caption);
+        if (!highlight.enabled || words.length < 2) {
+            return false;
+        }
+
+        var layerStart = layer.inPoint;
+        var layerEnd = layer.outPoint;
+        var animator = null;
+        try {
+            var textProps = layer.property("ADBE Text Properties");
+            var animators = textProps.property("ADBE Text Animators");
+            animator = animators.addProperty("ADBE Text Animator");
+            animator.name = "Active Word Highlight";
+
+            var animatorProps = animator.property("ADBE Text Animator Properties");
+            var fill = animatorProps.addProperty("ADBE Text Fill Color");
+            fill.setValue(hexToRgb(highlight.color, [1, 0.835294, 0.290196]));
+
+            var selectors = animator.property("ADBE Text Selectors");
+            var selector = selectors.addProperty("ADBE Text Selector");
+            selector.name = "Active Word Selector";
+
+            var advanced = selector.property("ADBE Text Range Advanced");
+            advanced.property("ADBE Text Range Units").setValue(2);
+            advanced.property("ADBE Text Range Type2").setValue(3);
+
+            var indexStart = selector.property("ADBE Text Index Start");
+            var indexEnd = selector.property("ADBE Text Index End");
+            indexStart.setValueAtTime(layerStart, 0);
+            indexEnd.setValueAtTime(layerStart, 0);
+
+            var keyCount = 0;
+            for (var i = 0; i < words.length; i += 1) {
+                var start = clampTime(words[i].start, layerStart, layerEnd);
+                var end = clampTime(words[i].end, layerStart, layerEnd);
+                if (end <= start) {
+                    continue;
+                }
+                indexStart.setValueAtTime(start, i + 1);
+                indexEnd.setValueAtTime(start, i + 2);
+                indexStart.setValueAtTime(end, 0);
+                indexEnd.setValueAtTime(end, 0);
+                keyCount += 1;
+            }
+
+            if (!keyCount) {
+                removeProperty(animator);
+                return false;
+            }
+
+            setHoldKeys(indexStart);
+            setHoldKeys(indexEnd);
+            return true;
+        } catch (error) {
+            removeProperty(animator);
+            return false;
+        }
+    }
+
+    function addMultiLayerCaptions(comp, captions, displayMode, style, highlight) {
         var count = 0;
+        highlight = normalizedHighlight(highlight);
         for (var i = 0; i < captions.length; i += 1) {
             var caption = captions[i];
             var text = displayText(caption, displayMode);
@@ -176,9 +304,17 @@ var AESubtitleAI = AESubtitleAI || {};
             }
             var layer = comp.layers.addText(text);
             layer.name = "AI Subtitle " + ("000" + (i + 1)).slice(-3);
-            applyTextStyle(layer, text, style, comp);
             layer.inPoint = Math.max(0, Number(caption.start) || 0);
             layer.outPoint = Math.max(layer.inPoint + 0.04, Number(caption.end) || (layer.inPoint + 2));
+            var words = validCaptionWords(caption);
+            if (highlight.enabled && words.length === 1) {
+                applyTextStyle(layer, text, fillStyle(style, highlight.color), comp);
+            } else {
+                applyTextStyle(layer, text, style, comp);
+                if (highlight.enabled && words.length > 1) {
+                    applyWordHighlight(layer, caption, highlight);
+                }
+            }
             count += 1;
         }
         return count;
@@ -273,13 +409,14 @@ var AESubtitleAI = AESubtitleAI || {};
             var style = payload.style || {};
             var displayMode = payload.displayMode || "source";
             var mode = payload.mode || "multi";
+            var highlight = normalizedHighlight(payload.wordHighlight);
             var count = 0;
 
             app.beginUndoGroup("AI Subtitle Import");
             if (mode === "single") {
                 count = addSingleLayerCaptions(comp, captions, displayMode, style);
             } else {
-                count = addMultiLayerCaptions(comp, captions, displayMode, style);
+                count = addMultiLayerCaptions(comp, captions, displayMode, style, highlight);
             }
             app.endUndoGroup();
             return ok({ count: count });

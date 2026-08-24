@@ -34,6 +34,8 @@
         "pauseSplitInput",
         "maxDurationInput",
         "minDurationInput",
+        "wordHighlightEnabledInput",
+        "wordHighlightColorInput",
         "layerModeInput",
         "displayModeInput",
         "fontInput",
@@ -119,6 +121,8 @@
             pauseSplit: Number($("pauseSplitInput").value) || 0.35,
             maxDuration: Number($("maxDurationInput").value) || 2.5,
             minDuration: Number($("minDurationInput").value) || 0.4,
+            wordHighlightEnabled: $("wordHighlightEnabledInput").checked,
+            wordHighlightColor: $("wordHighlightColorInput").value || "#FFD54A",
             layerMode: $("layerModeInput").value,
             displayMode: $("displayModeInput").value,
             font: $("fontInput").value.trim(),
@@ -448,6 +452,10 @@
             captions: state.captions,
             mode: settings.layerMode,
             displayMode: settings.displayMode,
+            wordHighlight: {
+                enabled: settings.wordHighlightEnabled,
+                color: settings.wordHighlightColor
+            },
             style: styleSettings(settings)
         }).then(function (result) {
             setStatus("Imported to AE: " + result.count + " lines");
