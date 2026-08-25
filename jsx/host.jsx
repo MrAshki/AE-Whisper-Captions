@@ -203,15 +203,23 @@ var AESubtitleAI = AESubtitleAI || {};
         };
     }
 
+    function textDocumentFont(doc) {
+        try {
+            return doc && doc.font ? String(doc.font) : "";
+        } catch (error) {
+            return "";
+        }
+    }
+
     function resolveFontRoles(style, templateDoc, preferences) {
         preferences = preferences || {};
         var available = discoverAvailableFonts();
         var preferredBase = findRequestedFont(available, fontRequest(preferences.base, DEFAULT_FONT_PREFERENCES.base));
         var configuredBase = findRequestedFont(available, fontRequest(style.font, null));
-        var templateBase = findRequestedFont(available, fontRequest(templateDoc && templateDoc.font, null));
+        var templateFont = textDocumentFont(templateDoc);
+        var templateBase = findRequestedFont(available, fontRequest(templateFont, null));
         var base = preferredBase || configuredBase || templateBase || (available.length ? available[0] : null);
-        var safeTemplateName = templateDoc && templateDoc.font ? String(templateDoc.font) : "";
-        var baseName = base ? base.postScriptName : safeTemplateName;
+        var baseName = base ? base.postScriptName : templateFont;
         var preferredActive = findRequestedFont(available, fontRequest(preferences.active, DEFAULT_FONT_PREFERENCES.active));
         var active = preferredActive || base;
         var activeName = active ? active.postScriptName : baseName;
@@ -433,8 +441,9 @@ var AESubtitleAI = AESubtitleAI || {};
         return addFillAnimator(layer, "Active Word Color", highlightColorExpression());
     }
 
-    function makeTextDocument(text, style, baseFont) {
-        var doc = new TextDocument(text);
+    function makeTextDocument(textProp, text, style, baseFont) {
+        var doc = textProp.value;
+        doc.text = text;
         doc.applyFill = true;
         doc.fillColor = hexToRgb(style.fillColor, [1, 1, 1]);
         doc.applyStroke = Number(style.strokeWidth) > 0;
@@ -549,9 +558,7 @@ var AESubtitleAI = AESubtitleAI || {};
             return false;
         }
         try {
-            var baseDoc = textProp.value;
-            var keyCount = 0;
-            textProp.setValueAtTime(layer.inPoint, baseDoc);
+            var entries = [];
             for (var i = 0; i < words.length; i += 1) {
                 if (!ranges[i]) {
                     continue;
@@ -561,21 +568,33 @@ var AESubtitleAI = AESubtitleAI || {};
                 if (end <= start) {
                     continue;
                 }
-                var characterRange = baseDoc.characterRange(ranges[i].start, ranges[i].end);
+                var activeDoc = textProp.value;
+                var characterRange = activeDoc.characterRange(ranges[i].start, ranges[i].end);
                 characterRange.font = fontRoles.active;
-                textProp.setValueAtTime(start, baseDoc);
-                characterRange.font = fontRoles.base;
                 var nextMapped = i + 1;
                 while (nextMapped < words.length && !ranges[nextMapped]) {
                     nextMapped += 1;
                 }
-                if (nextMapped >= words.length || words[nextMapped].start > end + 0.001) {
-                    textProp.setValueAtTime(end, baseDoc);
+                entries.push({
+                    start: start,
+                    end: end,
+                    activeDoc: activeDoc,
+                    resetAtEnd: nextMapped >= words.length || words[nextMapped].start > end + 0.001
+                });
+            }
+            if (!entries.length) {
+                return false;
+            }
+            var baseDoc = textProp.value;
+            textProp.setValueAtTime(layer.inPoint, baseDoc);
+            for (var j = 0; j < entries.length; j += 1) {
+                textProp.setValueAtTime(entries[j].start, entries[j].activeDoc);
+                if (entries[j].resetAtEnd) {
+                    textProp.setValueAtTime(entries[j].end, baseDoc);
                 }
-                keyCount += 1;
             }
             setHoldKeys(textProp);
-            return keyCount > 0;
+            return true;
         } catch (error) {
             return false;
         }
@@ -749,9 +768,9 @@ var AESubtitleAI = AESubtitleAI || {};
             var caption = captions[i];
             var captionStart = Math.max(0, Number(caption.start) || 0);
             var captionEnd = Math.max(captionStart + 0.04, Number(caption.end) || (captionStart + 2));
-            textProp.setValueAtTime(captionStart, makeTextDocument(displayText(caption, displayMode), style, fontRoles.base));
+            textProp.setValueAtTime(captionStart, makeTextDocument(textProp, displayText(caption, displayMode), style, fontRoles.base));
             if (i === captions.length - 1 || Number(captions[i + 1].start) > captionEnd + 0.001) {
-                textProp.setValueAtTime(captionEnd, makeTextDocument("", style, fontRoles.base));
+                textProp.setValueAtTime(captionEnd, makeTextDocument(textProp, "", style, fontRoles.base));
             }
         }
         return captions.length;
@@ -818,7 +837,7 @@ var AESubtitleAI = AESubtitleAI || {};
             var displayMode = payload.displayMode || "source";
             var mode = payload.mode || "multi";
             var highlight = normalizedHighlight(payload.wordHighlight);
-            var fontRoles = resolveFontRoles(style, new TextDocument(" "), payload.fontPreferences);
+            var fontRoles = resolveFontRoles(style, null, payload.fontPreferences);
             var count = 0;
 
             app.beginUndoGroup("AI Subtitle Import");
