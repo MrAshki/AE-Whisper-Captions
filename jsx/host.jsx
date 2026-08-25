@@ -94,15 +94,53 @@ var AESubtitleAI = AESubtitleAI || {};
         return Math.max(min, Math.min(max, value));
     }
 
-    function fillStyle(style, fillColor) {
-        var copy = {};
-        for (var key in style) {
-            if (style.hasOwnProperty(key)) {
-                copy[key] = style[key];
+    function colorWithAlpha(rgb) {
+        return [rgb[0], rgb[1], rgb[2], 1];
+    }
+
+    function findLayerByName(comp, name) {
+        for (var i = 1; i <= comp.numLayers; i += 1) {
+            if (comp.layer(i).name === name) {
+                return comp.layer(i);
             }
         }
-        copy.fillColor = fillColor;
-        return copy;
+        return null;
+    }
+
+    function ensureEffect(layer, name, matchName, defaultValue) {
+        var effects = layer.property("ADBE Effect Parade");
+        var effect = effects.property(name);
+        if (!effect) {
+            effect = effects.addProperty(matchName);
+            effect.name = name;
+            effect.property(1).setValue(defaultValue);
+        }
+        return effect;
+    }
+
+    function ensureSubtitleController(comp, style, highlight) {
+        var controller = findLayerByName(comp, "Subtitle Controller");
+        if (!controller) {
+            controller = comp.layers.addNull();
+            controller.name = "Subtitle Controller";
+            controller.guideLayer = true;
+        }
+        ensureEffect(controller, "Normal Color", "ADBE Color Control", colorWithAlpha(hexToRgb(style.fillColor, [1, 1, 1])));
+        ensureEffect(controller, "Highlight Color", "ADBE Color Control", colorWithAlpha(hexToRgb(highlight.color, [1, 0.835294, 0.290196])));
+        ensureEffect(controller, "Highlight Scale", "ADBE Slider Control", highlight.scale);
+        return controller;
+    }
+
+    function normalColorExpression() {
+        return "var c = thisComp.layer(\"Subtitle Controller\").effect(\"Normal Color\")(\"Color\");\n[c[0], c[1], c[2]];";
+    }
+
+    function highlightColorExpression() {
+        return "var c = thisComp.layer(\"Subtitle Controller\").effect(\"Highlight Color\")(\"Color\");\n[c[0], c[1], c[2]];";
+    }
+
+    function highlightScaleExpression() {
+        return "var s = thisComp.layer(\"Subtitle Controller\").effect(\"Highlight Scale\")(\"Slider\");\nvar f = Math.max(0, (value[0] - 100) / 100);\nvar v = 100 + ((s - 100) * f);\n[v, v, 100];";
     }
 
     function normalizedHighlight(payload) {
@@ -178,6 +216,29 @@ var AESubtitleAI = AESubtitleAI || {};
         if (style.shadow) {
             applyShadow(layer);
         }
+    }
+
+    function addFillAnimator(layer, name, expression) {
+        try {
+            var textProps = layer.property("ADBE Text Properties");
+            var animators = textProps.property("ADBE Text Animators");
+            var animator = animators.addProperty("ADBE Text Animator");
+            animator.name = name;
+            var animatorProps = animator.property("ADBE Text Animator Properties");
+            var fill = animatorProps.addProperty("ADBE Text Fill Color");
+            fill.expression = expression;
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function addNormalColorControl(layer) {
+        return addFillAnimator(layer, "Subtitle Normal Color", normalColorExpression());
+    }
+
+    function addWholeLayerHighlightColor(layer) {
+        return addFillAnimator(layer, "Active Word Color", highlightColorExpression());
     }
 
     function makeTextDocument(text, style) {
@@ -288,12 +349,10 @@ var AESubtitleAI = AESubtitleAI || {};
 
             var animatorProps = animator.property("ADBE Text Animator Properties");
             var fill = animatorProps.addProperty("ADBE Text Fill Color");
-            fill.setValue(hexToRgb(highlight.color, [1, 0.835294, 0.290196]));
-            var scale = null;
-            if (highlight.scale > 100) {
-                scale = animatorProps.addProperty("ADBE Text Scale 3D");
-                scale.setValue([100, 100, 100]);
-            }
+            fill.expression = highlightColorExpression();
+            var scale = animatorProps.addProperty("ADBE Text Scale 3D");
+            scale.setValue([100, 100, 100]);
+            scale.expression = highlightScaleExpression();
 
             var selectors = animator.property("ADBE Text Selectors");
             var selector = selectors.addProperty("ADBE Text Selector");
@@ -321,7 +380,7 @@ var AESubtitleAI = AESubtitleAI || {};
                 }
                 indexStart.setValueAtTime(start, i);
                 indexEnd.setValueAtTime(start, i + 1);
-                addScaleEnvelope(scale, layer, start, end, highlight.scale);
+                addScaleEnvelope(scale, layer, start, end, 200);
                 if (i === words.length - 1 || words[i + 1].start > end + 0.001) {
                     indexStart.setValueAtTime(end, 0);
                     indexEnd.setValueAtTime(end, 0);
@@ -345,7 +404,7 @@ var AESubtitleAI = AESubtitleAI || {};
     }
 
     function applyWholeLayerTextScale(layer, highlight) {
-        if (!highlight.enabled || highlight.scale <= 100) {
+        if (!highlight.enabled) {
             return false;
         }
         var animator = null;
@@ -357,7 +416,8 @@ var AESubtitleAI = AESubtitleAI || {};
             var animatorProps = animator.property("ADBE Text Animator Properties");
             var scale = animatorProps.addProperty("ADBE Text Scale 3D");
             scale.setValue([100, 100, 100]);
-            addScaleEnvelope(scale, layer, layer.inPoint, layer.outPoint, highlight.scale);
+            scale.expression = highlightScaleExpression();
+            addScaleEnvelope(scale, layer, layer.inPoint, layer.outPoint, 200);
             setBezierKeys(scale);
             return true;
         } catch (error) {
@@ -380,11 +440,12 @@ var AESubtitleAI = AESubtitleAI || {};
             layer.inPoint = Math.max(0, Number(caption.start) || 0);
             layer.outPoint = Math.max(layer.inPoint + 0.04, Number(caption.end) || (layer.inPoint + 2));
             var words = validCaptionWords(caption);
+            applyTextStyle(layer, text, style, comp);
+            addNormalColorControl(layer);
             if (highlight.enabled && words.length === 1) {
-                applyTextStyle(layer, text, fillStyle(style, highlight.color), comp);
+                addWholeLayerHighlightColor(layer);
                 applyWholeLayerTextScale(layer, highlight);
             } else {
-                applyTextStyle(layer, text, style, comp);
                 if (highlight.enabled && words.length > 1) {
                     applyWordHighlight(layer, caption, highlight);
                 }
@@ -405,6 +466,7 @@ var AESubtitleAI = AESubtitleAI || {};
         if (style.shadow) {
             applyShadow(layer);
         }
+        addNormalColorControl(layer);
         var textProp = getSourceText(layer);
         var start = Number(captions[0].start) || 0;
         var end = Number(captions[captions.length - 1].end) || comp.duration;
@@ -487,6 +549,7 @@ var AESubtitleAI = AESubtitleAI || {};
             var count = 0;
 
             app.beginUndoGroup("AI Subtitle Import");
+            ensureSubtitleController(comp, style, highlight);
             if (mode === "single") {
                 count = addSingleLayerCaptions(comp, captions, displayMode, style);
             } else {
