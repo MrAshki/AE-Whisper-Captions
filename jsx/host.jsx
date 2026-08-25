@@ -231,12 +231,44 @@ var AESubtitleAI = AESubtitleAI || {};
         }
     }
 
+    function setBezierKeys(prop) {
+        if (!prop || !prop.numKeys) {
+            return;
+        }
+        for (var i = 1; i <= prop.numKeys; i += 1) {
+            try {
+                prop.setInterpolationTypeAtKey(i, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+            } catch (error) {}
+        }
+    }
+
     function removeProperty(prop) {
         try {
             if (prop && prop.remove) {
                 prop.remove();
             }
         } catch (error) {}
+    }
+
+    function frameTransition(layer, start, end) {
+        var duration = Math.max(0, end - start);
+        var frameDuration = 1 / (layer.containingComp ? layer.containingComp.frameRate : 25);
+        return Math.min(frameDuration * 3, duration / 3);
+    }
+
+    function addScaleEnvelope(scaleProp, layer, start, end, activeScale) {
+        if (!scaleProp || activeScale <= 100) {
+            return;
+        }
+        var transition = frameTransition(layer, start, end);
+        var active = [activeScale, activeScale, 100];
+        var normal = [100, 100, 100];
+        var inEnd = start + transition;
+        var outStart = end - transition;
+        scaleProp.setValueAtTime(start, normal);
+        scaleProp.setValueAtTime(inEnd, active);
+        scaleProp.setValueAtTime(outStart, active);
+        scaleProp.setValueAtTime(end, normal);
     }
 
     function applyWordHighlight(layer, caption, highlight) {
@@ -257,8 +289,10 @@ var AESubtitleAI = AESubtitleAI || {};
             var animatorProps = animator.property("ADBE Text Animator Properties");
             var fill = animatorProps.addProperty("ADBE Text Fill Color");
             fill.setValue(hexToRgb(highlight.color, [1, 0.835294, 0.290196]));
+            var scale = null;
             if (highlight.scale > 100) {
-                animatorProps.addProperty("ADBE Text Scale 3D").setValue([highlight.scale, highlight.scale, 100]);
+                scale = animatorProps.addProperty("ADBE Text Scale 3D");
+                scale.setValue([100, 100, 100]);
             }
 
             var selectors = animator.property("ADBE Text Selectors");
@@ -271,8 +305,8 @@ var AESubtitleAI = AESubtitleAI || {};
 
             var indexStart = selector.property("ADBE Text Index Start");
             var indexEnd = selector.property("ADBE Text Index End");
-            indexStart.setValueAtTime(layerStart, 0);
-            indexEnd.setValueAtTime(layerStart, 0);
+            indexStart.setValue(0);
+            indexEnd.setValue(0);
 
             var keyCount = 0;
             for (var i = 0; i < words.length; i += 1) {
@@ -281,10 +315,17 @@ var AESubtitleAI = AESubtitleAI || {};
                 if (end <= start) {
                     continue;
                 }
-                indexStart.setValueAtTime(start, i + 1);
-                indexEnd.setValueAtTime(start, i + 2);
-                indexStart.setValueAtTime(end, 0);
-                indexEnd.setValueAtTime(end, 0);
+                if (!keyCount && start > layerStart) {
+                    indexStart.setValueAtTime(layerStart, 0);
+                    indexEnd.setValueAtTime(layerStart, 0);
+                }
+                indexStart.setValueAtTime(start, i);
+                indexEnd.setValueAtTime(start, i + 1);
+                addScaleEnvelope(scale, layer, start, end, highlight.scale);
+                if (i === words.length - 1 || words[i + 1].start > end + 0.001) {
+                    indexStart.setValueAtTime(end, 0);
+                    indexEnd.setValueAtTime(end, 0);
+                }
                 keyCount += 1;
             }
 
@@ -295,6 +336,7 @@ var AESubtitleAI = AESubtitleAI || {};
 
             setHoldKeys(indexStart);
             setHoldKeys(indexEnd);
+            setBezierKeys(scale);
             return true;
         } catch (error) {
             removeProperty(animator);
@@ -313,7 +355,10 @@ var AESubtitleAI = AESubtitleAI || {};
             animator = animators.addProperty("ADBE Text Animator");
             animator.name = "Active Word Scale";
             var animatorProps = animator.property("ADBE Text Animator Properties");
-            animatorProps.addProperty("ADBE Text Scale 3D").setValue([highlight.scale, highlight.scale, 100]);
+            var scale = animatorProps.addProperty("ADBE Text Scale 3D");
+            scale.setValue([100, 100, 100]);
+            addScaleEnvelope(scale, layer, layer.inPoint, layer.outPoint, highlight.scale);
+            setBezierKeys(scale);
             return true;
         } catch (error) {
             removeProperty(animator);
