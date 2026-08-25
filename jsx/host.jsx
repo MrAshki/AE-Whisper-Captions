@@ -107,6 +107,41 @@ var AESubtitleAI = AESubtitleAI || {};
         return null;
     }
 
+    function hasEffect(layer, name) {
+        try {
+            var effects = layer.property("ADBE Effect Parade");
+            return !!(effects && effects.property(name));
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function findSubtitleControllerCandidate(comp) {
+        for (var i = 1; i <= comp.numLayers; i += 1) {
+            var layer = comp.layer(i);
+            if (
+                hasEffect(layer, "Normal Color") &&
+                hasEffect(layer, "Highlight Color") &&
+                hasEffect(layer, "Highlight Scale")
+            ) {
+                return layer;
+            }
+        }
+        return null;
+    }
+
+    function setExactLayerName(layer, name) {
+        layer.name = name;
+        try {
+            if (layer.source) {
+                layer.source.name = name;
+            }
+        } catch (sourceError) {}
+        if (layer.name !== name) {
+            throw new Error("Could not name layer " + name);
+        }
+    }
+
     function ensureEffect(layer, name, matchName, defaultValue) {
         var effects = layer.property("ADBE Effect Parade");
         var effect = effects.property(name);
@@ -121,13 +156,23 @@ var AESubtitleAI = AESubtitleAI || {};
     function ensureSubtitleController(comp, style, highlight) {
         var controller = findLayerByName(comp, "Subtitle Controller");
         if (!controller) {
+            controller = findSubtitleControllerCandidate(comp);
+            if (controller) {
+                setExactLayerName(controller, "Subtitle Controller");
+            }
+        }
+        if (!controller) {
             controller = comp.layers.addNull();
-            controller.name = "Subtitle Controller";
+            setExactLayerName(controller, "Subtitle Controller");
             controller.guideLayer = true;
         }
         ensureEffect(controller, "Normal Color", "ADBE Color Control", colorWithAlpha(hexToRgb(style.fillColor, [1, 1, 1])));
         ensureEffect(controller, "Highlight Color", "ADBE Color Control", colorWithAlpha(hexToRgb(highlight.color, [1, 0.835294, 0.290196])));
         ensureEffect(controller, "Highlight Scale", "ADBE Slider Control", highlight.scale);
+        controller = findLayerByName(comp, "Subtitle Controller");
+        if (!controller) {
+            throw new Error("Subtitle Controller layer was not created");
+        }
         return controller;
     }
 
@@ -218,18 +263,28 @@ var AESubtitleAI = AESubtitleAI || {};
         }
     }
 
+    function assignExpression(prop, expression) {
+        if (!prop || prop.canSetExpression === false) {
+            throw new Error("Expression is not supported on target property");
+        }
+        prop.expression = expression;
+        prop.expressionEnabled = true;
+    }
+
     function addFillAnimator(layer, name, expression) {
+        var animator = null;
         try {
             var textProps = layer.property("ADBE Text Properties");
             var animators = textProps.property("ADBE Text Animators");
-            var animator = animators.addProperty("ADBE Text Animator");
+            animator = animators.addProperty("ADBE Text Animator");
             animator.name = name;
             var animatorProps = animator.property("ADBE Text Animator Properties");
             var fill = animatorProps.addProperty("ADBE Text Fill Color");
-            fill.expression = expression;
+            assignExpression(fill, expression);
             return true;
         } catch (error) {
-            return false;
+            removeProperty(animator);
+            throw error;
         }
     }
 
@@ -349,10 +404,10 @@ var AESubtitleAI = AESubtitleAI || {};
 
             var animatorProps = animator.property("ADBE Text Animator Properties");
             var fill = animatorProps.addProperty("ADBE Text Fill Color");
-            fill.expression = highlightColorExpression();
+            assignExpression(fill, highlightColorExpression());
             var scale = animatorProps.addProperty("ADBE Text Scale 3D");
             scale.setValue([100, 100, 100]);
-            scale.expression = highlightScaleExpression();
+            assignExpression(scale, highlightScaleExpression());
 
             var selectors = animator.property("ADBE Text Selectors");
             var selector = selectors.addProperty("ADBE Text Selector");
@@ -416,7 +471,7 @@ var AESubtitleAI = AESubtitleAI || {};
             var animatorProps = animator.property("ADBE Text Animator Properties");
             var scale = animatorProps.addProperty("ADBE Text Scale 3D");
             scale.setValue([100, 100, 100]);
-            scale.expression = highlightScaleExpression();
+            assignExpression(scale, highlightScaleExpression());
             addScaleEnvelope(scale, layer, layer.inPoint, layer.outPoint, 200);
             setBezierKeys(scale);
             return true;
