@@ -198,6 +198,30 @@
                     <div class="counter" id="captionCounter">0 lines</div>
                 </div>
 
+                <section class="preview-panel" aria-label="Subtitle preview">
+                    <div class="preview-stage">
+                        <video id="previewVideo" controls preload="metadata"></video>
+                        <div id="previewCaption" class="preview-caption" contenteditable="true" spellcheck="true" dir="auto"></div>
+                        <div id="previewEmpty" class="preview-empty">Select an audio or video file</div>
+                    </div>
+                    <div class="preview-controls">
+                        <div class="preview-status-row">
+                            <strong id="previewCaptionNumber">No active caption</strong>
+                            <span id="previewTime">00:00:00,000</span>
+                        </div>
+                        <label class="field preview-editor-field">
+                            <span>Current Subtitle</span>
+                            <textarea id="previewTextInput" dir="auto" disabled></textarea>
+                        </label>
+                        <div class="preview-button-grid">
+                            <button id="previousCaptionBtn" type="button">Previous</button>
+                            <button id="nextCaptionBtn" type="button">Next</button>
+                            <button id="setCaptionStartBtn" type="button">Set Start</button>
+                            <button id="setCaptionEndBtn" type="button">Set End</button>
+                        </div>
+                    </div>
+                </section>
+
                 <div class="table-wrap">
                     <table class="caption-table">
                         <thead>

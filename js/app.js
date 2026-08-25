@@ -6,7 +6,10 @@
         sourceWords: [],
         mediaPath: "",
         selected: {},
-        restoredSettings: {}
+        restoredSettings: {},
+        previewCaptionId: null,
+        previewWordIndex: -1,
+        previewMediaPath: ""
     };
 
     var $ = function (id) {
@@ -58,6 +61,7 @@
         render();
         log("Plugin is ready.");
         loadAfterEffectsFonts();
+        updatePreviewMedia();
     }
 
     function bindEvents() {
@@ -67,12 +71,14 @@
             $("mediaPathInput").value = state.mediaPath;
             setStatus(state.mediaPath ? "Selected: " + state.mediaPath : "Ready");
             persistSettings();
+            updatePreviewMedia();
         });
 
         $("mediaPathInput").addEventListener("input", function (event) {
             state.mediaPath = event.target.value.trim();
             persistSettings();
         });
+        $("mediaPathInput").addEventListener("change", updatePreviewMedia);
 
         $("transcribeBtn").addEventListener("click", runTranscription);
         $("importSrtBtn").addEventListener("click", function () {
@@ -101,12 +107,15 @@
             showSettingsTab("font");
         });
         $("refreshFontsBtn").addEventListener("click", loadAfterEffectsFonts);
+        bindPreviewEvents();
 
         fields.forEach(function (id) {
             var el = $(id);
             if (el) {
                 el.addEventListener("change", persistSettings);
                 el.addEventListener("input", persistSettings);
+                el.addEventListener("change", function () { syncPreview(true); });
+                el.addEventListener("input", function () { syncPreview(true); });
             }
         });
     }
@@ -282,13 +291,370 @@
         });
     }
 
+    function bindPreviewEvents() {
+        var video = $("previewVideo");
+        var overlay = $("previewCaption");
+        var editor = $("previewTextInput");
+
+        video.addEventListener("timeupdate", function () { syncPreview(false); });
+        video.addEventListener("seeked", function () { syncPreview(true); });
+        video.addEventListener("loadedmetadata", function () {
+            $("previewEmpty").style.display = "none";
+            syncPreview(true);
+        });
+        video.addEventListener("error", function () {
+            $("previewEmpty").textContent = "This media codec cannot be previewed";
+            $("previewEmpty").style.display = "flex";
+            log("Preview could not open this media codec.");
+        });
+
+        overlay.addEventListener("focus", function () {
+            video.pause();
+            var caption = previewCaption();
+            if (caption) {
+                overlay.textContent = previewDisplayText(caption);
+            }
+        });
+        overlay.addEventListener("input", function () {
+            updatePreviewCaptionText(overlay.innerText || overlay.textContent || "");
+        });
+        overlay.addEventListener("blur", function () {
+            syncPreview(true);
+        });
+        editor.addEventListener("focus", function () {
+            video.pause();
+        });
+        editor.addEventListener("input", function () {
+            updatePreviewCaptionText(editor.value);
+            syncPreview(true);
+        });
+
+        $("previousCaptionBtn").addEventListener("click", function () { movePreviewCaption(-1); });
+        $("nextCaptionBtn").addEventListener("click", function () { movePreviewCaption(1); });
+        $("setCaptionStartBtn").addEventListener("click", function () { setPreviewBoundary("start"); });
+        $("setCaptionEndBtn").addEventListener("click", function () { setPreviewBoundary("end"); });
+    }
+
+    function mediaFileUrl(path) {
+        var normalized = String(path || "").replace(/\\/g, "/");
+        if (!normalized) {
+            return "";
+        }
+        if (/^file:\/\//i.test(normalized)) {
+            return normalized;
+        }
+        var parts = normalized.split("/");
+        for (var i = 0; i < parts.length; i += 1) {
+            if (i === 0 && /^[a-z]:$/i.test(parts[i])) {
+                continue;
+            }
+            parts[i] = encodeURIComponent(parts[i]);
+        }
+        return "file:///" + parts.join("/");
+    }
+
+    function updatePreviewMedia() {
+        var path = ($("mediaPathInput").value || state.mediaPath || "").trim();
+        if (path === state.previewMediaPath) {
+            return;
+        }
+        state.previewMediaPath = path;
+        state.previewCaptionId = null;
+        state.previewWordIndex = -1;
+        var video = $("previewVideo");
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        $("previewEmpty").textContent = path ? "Loading preview..." : "Select an audio or video file";
+        $("previewEmpty").style.display = "flex";
+        if (path) {
+            video.src = mediaFileUrl(path);
+            video.load();
+        }
+        syncPreview(true);
+    }
+
+    function previewCaption() {
+        for (var i = 0; i < state.captions.length; i += 1) {
+            if (state.captions[i].id === state.previewCaptionId) {
+                return state.captions[i];
+            }
+        }
+        return null;
+    }
+
+    function captionAtTime(time) {
+        for (var i = 0; i < state.captions.length; i += 1) {
+            if (time >= state.captions[i].start && time < state.captions[i].end) {
+                return state.captions[i];
+            }
+        }
+        return null;
+    }
+
+    function previewDisplayText(caption) {
+        var mode = $("displayModeInput").value;
+        var source = caption.text || "";
+        var translation = caption.translation || "";
+        if (mode === "translation") {
+            return translation || source;
+        }
+        if (mode === "source-top") {
+            return translation ? source + "\n" + translation : source;
+        }
+        if (mode === "translation-top") {
+            return translation ? translation + "\n" + source : source;
+        }
+        return source;
+    }
+
+    function activePreviewWord(caption, time) {
+        var words = caption.words || [];
+        for (var i = 0; i < words.length; i += 1) {
+            if (time >= words[i].start && time < words[i].end) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    function selectedFontFamily(select) {
+        if (select.value) {
+            return select.value;
+        }
+        return "sans-serif";
+    }
+
+    function previewFontPixels(size) {
+        var stageHeight = $("previewVideo").clientHeight || 270;
+        return Math.max(12, Math.min(96, Number(size || 64) * stageHeight / 1080));
+    }
+
+    function applyPreviewStyle(settings) {
+        var overlay = $("previewCaption");
+        var strokeWidth = Math.max(0, Number(settings.strokeWidth) || 0) * 0.35;
+        overlay.style.left = settings.positionX + "%";
+        overlay.style.top = settings.positionY + "%";
+        overlay.style.color = settings.fillColor;
+        overlay.style.fontFamily = selectedFontFamily($("baseFontInput"));
+        overlay.style.fontSize = previewFontPixels(settings.baseFontSize) + "px";
+        overlay.style.webkitTextStroke = strokeWidth + "px " + settings.strokeColor;
+        overlay.style.textShadow = settings.shadow ? "0 3px 6px rgba(0, 0, 0, 0.8)" : "none";
+    }
+
+    function renderPreviewWords(caption, time, settings) {
+        var overlay = $("previewCaption");
+        var text = previewDisplayText(caption);
+        var words = caption.words || [];
+        var activeIndex = activePreviewWord(caption, time);
+        if (!settings.wordHighlightEnabled || $("displayModeInput").value !== "source" || !words.length) {
+            overlay.textContent = text;
+            return activeIndex;
+        }
+        var cursor = 0;
+        var matched = 0;
+        overlay.textContent = "";
+        for (var i = 0; i < words.length; i += 1) {
+            var wordText = String(words[i].text || "").trim();
+            var start = text.indexOf(wordText, cursor);
+            if (!wordText || start < 0) {
+                continue;
+            }
+            overlay.appendChild(document.createTextNode(text.slice(cursor, start)));
+            var span = document.createElement("span");
+            span.className = "preview-word" + (i === activeIndex ? " active" : "");
+            span.textContent = text.slice(start, start + wordText.length);
+            if (i === activeIndex) {
+                span.style.color = settings.wordHighlightColor;
+                span.style.fontFamily = selectedFontFamily($("activeFontInput"));
+                span.style.fontSize = previewFontPixels(settings.activeFontSize) + "px";
+                span.style.transform = "scale(" + (settings.wordHighlightScale / 100) + ")";
+            }
+            overlay.appendChild(span);
+            cursor = start + wordText.length;
+            matched += 1;
+        }
+        if (!matched) {
+            overlay.textContent = text;
+        } else {
+            overlay.appendChild(document.createTextNode(text.slice(cursor)));
+        }
+        return activeIndex;
+    }
+
+    function updatePlaybackRow(captionId, shouldScroll) {
+        var rows = $("captionBody").children;
+        for (var i = 0; i < rows.length; i += 1) {
+            var active = rows[i]._captionId === captionId;
+            rows[i].classList.toggle("playback-active", active);
+            if (active && shouldScroll && rows[i].scrollIntoView) {
+                try {
+                    rows[i].scrollIntoView({ block: "nearest" });
+                } catch (error) {
+                    rows[i].scrollIntoView(false);
+                }
+            }
+        }
+    }
+
+    function syncPreview(force) {
+        var video = $("previewVideo");
+        var time = isFinite(video.currentTime) ? video.currentTime : 0;
+        $("previewTime").textContent = global.SRT.formatTimecode(time);
+        var caption = captionAtTime(time);
+        var changed = (!caption && state.previewCaptionId !== null) || (caption && caption.id !== state.previewCaptionId);
+        if (changed) {
+            state.previewCaptionId = caption ? caption.id : null;
+            state.previewWordIndex = -1;
+        }
+        caption = previewCaption();
+        var overlay = $("previewCaption");
+        var editor = $("previewTextInput");
+        if (!caption) {
+            if (document.activeElement !== overlay) {
+                overlay.textContent = "";
+            }
+            overlay.setAttribute("contenteditable", "false");
+            editor.value = "";
+            editor.disabled = true;
+            $("previewCaptionNumber").textContent = "No active caption";
+            updatePlaybackRow(null, false);
+            return;
+        }
+        var index = state.captions.indexOf(caption);
+        $("previewCaptionNumber").textContent = "Caption " + (index + 1) + " of " + state.captions.length;
+        overlay.setAttribute("contenteditable", "true");
+        editor.disabled = false;
+        if (changed || document.activeElement !== editor) {
+            editor.value = previewDisplayText(caption);
+        }
+        var settings = getSettings();
+        applyPreviewStyle(settings);
+        var wordIndex = activePreviewWord(caption, time);
+        if (document.activeElement !== overlay && (force || changed || wordIndex !== state.previewWordIndex)) {
+            state.previewWordIndex = renderPreviewWords(caption, time, settings);
+        }
+        updatePlaybackRow(caption.id, changed && !video.paused);
+    }
+
+    function updateMasterWords(captionWords) {
+        for (var i = 0; i < captionWords.length; i += 1) {
+            for (var j = 0; j < state.sourceWords.length; j += 1) {
+                if (Math.abs(state.sourceWords[j].start - captionWords[i].start) < 0.001 &&
+                    Math.abs(state.sourceWords[j].end - captionWords[i].end) < 0.001) {
+                    state.sourceWords[j].text = captionWords[i].text;
+                    break;
+                }
+            }
+        }
+    }
+
+    function updateOriginalCaptionText(caption, text) {
+        var words = caption.words || [];
+        var tokens = String(text || "").trim().split(/\s+/).filter(Boolean);
+        if (words.length && tokens.length === words.length) {
+            for (var i = 0; i < words.length; i += 1) {
+                words[i].text = tokens[i];
+            }
+            updateMasterWords(words);
+        } else if (words.length && tokens.length !== words.length) {
+            delete caption.words;
+        }
+        caption.text = text;
+    }
+
+    function updatePreviewCaptionText(value) {
+        var caption = previewCaption();
+        if (!caption) {
+            return;
+        }
+        var mode = $("displayModeInput").value;
+        var text = String(value || "").replace(/\r\n/g, "\n");
+        if (mode === "translation") {
+            caption.translation = text;
+        } else if (mode === "source-top" || mode === "translation-top") {
+            var lines = text.split("\n");
+            var first = lines.shift() || "";
+            var rest = lines.join("\n");
+            if (mode === "source-top") {
+                updateOriginalCaptionText(caption, first);
+                caption.translation = rest;
+            } else {
+                caption.translation = first;
+                updateOriginalCaptionText(caption, rest);
+            }
+        } else {
+            updateOriginalCaptionText(caption, text);
+        }
+        if (document.activeElement !== $("previewTextInput")) {
+            $("previewTextInput").value = previewDisplayText(caption);
+        }
+        updateCaptionRow(caption);
+    }
+
+    function updateCaptionRow(caption) {
+        var rows = $("captionBody").children;
+        for (var i = 0; i < rows.length; i += 1) {
+            if (rows[i]._captionId === caption.id) {
+                rows[i].querySelector("[data-role='text']").value = caption.text || "";
+                rows[i].querySelector("[data-role='translation']").value = caption.translation || "";
+                rows[i].querySelector("[data-role='start']").value = global.SRT.formatTimecode(caption.start);
+                rows[i].querySelector("[data-role='end']").value = global.SRT.formatTimecode(caption.end);
+                break;
+            }
+        }
+    }
+
+    function seekToCaption(caption) {
+        if (!caption) {
+            return;
+        }
+        var video = $("previewVideo");
+        try {
+            video.currentTime = Math.max(0, caption.start + 0.001);
+        } catch (error) {}
+        state.previewCaptionId = caption.id;
+        syncPreview(true);
+    }
+
+    function movePreviewCaption(direction) {
+        if (!state.captions.length) {
+            return;
+        }
+        var caption = previewCaption();
+        var index = caption ? state.captions.indexOf(caption) : (direction > 0 ? -1 : state.captions.length);
+        index = Math.max(0, Math.min(state.captions.length - 1, index + direction));
+        seekToCaption(state.captions[index]);
+    }
+
+    function setPreviewBoundary(boundary) {
+        var caption = previewCaption();
+        if (!caption) {
+            return;
+        }
+        var time = Math.max(0, $("previewVideo").currentTime || 0);
+        if (boundary === "start") {
+            caption.start = Math.max(0, Math.min(time, caption.end - 0.04));
+        } else {
+            caption.end = Math.max(time, caption.start + 0.04);
+        }
+        sortCaptions();
+        render();
+        state.previewCaptionId = caption.id;
+        syncPreview(true);
+    }
+
     function render() {
         var body = $("captionBody");
         body.innerHTML = "";
         state.captions.forEach(function (caption, index) {
             var row = document.createElement("tr");
+            row._captionId = caption.id;
             if (state.selected[caption.id]) {
                 row.className = "selected";
+            }
+            if (state.previewCaptionId === caption.id) {
+                row.classList.add("playback-active");
             }
             row.innerHTML = [
                 "<td><input data-role=\"select\" type=\"checkbox\"" + (state.selected[caption.id] ? " checked" : "") + "></td>",
@@ -305,6 +671,9 @@
     }
 
     function bindRow(row, caption) {
+        row.querySelector(".row-index").addEventListener("click", function () {
+            seekToCaption(caption);
+        });
         row.querySelector("[data-role='select']").addEventListener("change", function (event) {
             if (event.target.checked) {
                 state.selected[caption.id] = true;
@@ -315,14 +684,22 @@
         });
 
         ["start", "end", "text", "translation"].forEach(function (role) {
+            row.querySelector("[data-role='" + role + "']").addEventListener("focus", function () {
+                $("previewVideo").pause();
+                seekToCaption(caption);
+            });
             row.querySelector("[data-role='" + role + "']").addEventListener("change", function (event) {
                 if (role === "start" || role === "end") {
                     caption[role] = global.SRT.parseEditableTime(event.target.value);
+                } else if (role === "text") {
+                    updateOriginalCaptionText(caption, event.target.value);
                 } else {
                     caption[role] = event.target.value;
                 }
                 sortCaptions();
                 render();
+                state.previewCaptionId = caption.id;
+                syncPreview(true);
             });
         });
     }
@@ -362,6 +739,7 @@
         state.selected = {};
         sortCaptions();
         render();
+        syncPreview(true);
     }
 
     function importSrtFile(event) {
@@ -375,8 +753,6 @@
                 detectBilingual: $("detectBilingualInput").checked
             });
             replaceCaptions(captions, { clearSourceWords: true });
-            state.mediaPath = file.path || state.mediaPath;
-            $("mediaPathInput").value = state.mediaPath;
             setStatus("Imported SRT: " + captions.length + " lines");
             log("SRT import complete: " + captions.length + " lines.");
         };
@@ -616,6 +992,8 @@
             try {
                 var payload = JSON.parse(reader.result);
                 state.mediaPath = payload.mediaPath || "";
+                $("mediaPathInput").value = state.mediaPath;
+                updatePreviewMedia();
                 replaceCaptions(payload.captions || [], { sourceWords: payload.sourceWords || [] });
                 setStatus("Draft opened");
                 log("Draft opened: " + (file.path || file.name));
