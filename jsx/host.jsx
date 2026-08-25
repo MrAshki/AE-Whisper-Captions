@@ -211,6 +211,17 @@ var AESubtitleAI = AESubtitleAI || {};
         }
     }
 
+    function fontPreferenceSize(preference, fallback) {
+        var value = preference && typeof preference === "object" ? Number(preference.size) : NaN;
+        if (!isFinite(value)) {
+            value = Number(fallback);
+        }
+        if (!isFinite(value)) {
+            value = 64;
+        }
+        return Math.max(8, Math.min(260, value));
+    }
+
     function resolveFontRoles(style, templateDoc, preferences) {
         preferences = preferences || {};
         var available = discoverAvailableFonts();
@@ -223,9 +234,13 @@ var AESubtitleAI = AESubtitleAI || {};
         var preferredActive = findRequestedFont(available, fontRequest(preferences.active, DEFAULT_FONT_PREFERENCES.active));
         var active = preferredActive || base;
         var activeName = active ? active.postScriptName : baseName;
+        var baseSize = fontPreferenceSize(preferences.base, style.fontSize);
+        var activeSize = fontPreferenceSize(preferences.active, baseSize);
         return {
             base: baseName,
             active: activeName,
+            baseSize: baseSize,
+            activeSize: activeSize,
             basePreferred: !!preferredBase,
             activePreferred: !!preferredActive
         };
@@ -233,6 +248,10 @@ var AESubtitleAI = AESubtitleAI || {};
 
     function sameFont(left, right) {
         return normalizedFontName(left) === normalizedFontName(right);
+    }
+
+    function activeFontStyleDiffers(fontRoles) {
+        return !sameFont(fontRoles.base, fontRoles.active) || Math.abs(fontRoles.baseSize - fontRoles.activeSize) > 0.001;
     }
 
     function clampTime(value, min, max) {
@@ -530,7 +549,7 @@ var AESubtitleAI = AESubtitleAI || {};
     }
 
     function applyWholeLayerActiveFont(layer, fontRoles) {
-        if (!fontRoles.active || sameFont(fontRoles.base, fontRoles.active)) {
+        if (!activeFontStyleDiffers(fontRoles)) {
             return true;
         }
         try {
@@ -539,7 +558,11 @@ var AESubtitleAI = AESubtitleAI || {};
             if (!doc.text) {
                 return false;
             }
-            doc.characterRange(0, -1).font = fontRoles.active;
+            var characterRange = doc.characterRange(0, -1);
+            if (fontRoles.active) {
+                characterRange.font = fontRoles.active;
+            }
+            characterRange.fontSize = fontRoles.activeSize;
             textProp.setValue(doc);
             return true;
         } catch (error) {
@@ -548,7 +571,7 @@ var AESubtitleAI = AESubtitleAI || {};
     }
 
     function applyActiveWordFont(layer, caption, text, fontRoles) {
-        if (!fontRoles.active || sameFont(fontRoles.base, fontRoles.active)) {
+        if (!activeFontStyleDiffers(fontRoles)) {
             return true;
         }
         var words = validCaptionWords(caption);
@@ -570,7 +593,10 @@ var AESubtitleAI = AESubtitleAI || {};
                 }
                 var activeDoc = textProp.value;
                 var characterRange = activeDoc.characterRange(ranges[i].start, ranges[i].end);
-                characterRange.font = fontRoles.active;
+                if (fontRoles.active) {
+                    characterRange.font = fontRoles.active;
+                }
+                characterRange.fontSize = fontRoles.activeSize;
                 var nextMapped = i + 1;
                 while (nextMapped < words.length && !ranges[nextMapped]) {
                     nextMapped += 1;
@@ -776,6 +802,54 @@ var AESubtitleAI = AESubtitleAI || {};
         return captions.length;
     }
 
+    AESubtitleAI.listFonts = function () {
+        try {
+            var available = discoverAvailableFonts();
+            var seen = {};
+            var fonts = [];
+            for (var i = 0; i < available.length; i += 1) {
+                var key = normalizedFontName(available[i].postScriptName);
+                if (!key || seen[key]) {
+                    continue;
+                }
+                seen[key] = true;
+                var label = available[i].fullName || available[i].nativeFullName || available[i].postScriptName;
+                fonts.push({
+                    postScriptName: available[i].postScriptName,
+                    familyName: available[i].familyName,
+                    styleName: available[i].styleName,
+                    fullName: available[i].fullName,
+                    label: label
+                });
+            }
+            fonts.sort(function (left, right) {
+                var a = normalizedFontName(left.label);
+                var b = normalizedFontName(right.label);
+                return a < b ? -1 : (a > b ? 1 : 0);
+            });
+            var preferredBase = findRequestedFont(available, DEFAULT_FONT_PREFERENCES.base);
+            var preferredActive = findRequestedFont(available, DEFAULT_FONT_PREFERENCES.active);
+            if (!preferredBase) {
+                try {
+                    if (app.fonts.getDefaultFontForCTScript && typeof CTScript !== "undefined") {
+                        var defaultFont = app.fonts.getDefaultFontForCTScript(CTScript.CT_ROMAN_SCRIPT);
+                        preferredBase = findRequestedFont(available, { names: [fontField(defaultFont, "postScriptName")] });
+                    }
+                } catch (defaultFontError) {}
+            }
+            if (!preferredBase && available.length) {
+                preferredBase = available[0];
+            }
+            return ok({
+                fonts: fonts,
+                preferredBase: preferredBase ? preferredBase.postScriptName : "",
+                preferredActive: preferredActive ? preferredActive.postScriptName : ""
+            });
+        } catch (error) {
+            return fail(error);
+        }
+    };
+
     AESubtitleAI.readTextLayers = function () {
         try {
             var comp = activeComp();
@@ -853,6 +927,8 @@ var AESubtitleAI = AESubtitleAI || {};
                 fonts: {
                     base: fontRoles.base,
                     active: fontRoles.active,
+                    baseSize: fontRoles.baseSize,
+                    activeSize: fontRoles.activeSize,
                     basePreferred: fontRoles.basePreferred,
                     activePreferred: fontRoles.activePreferred
                 }

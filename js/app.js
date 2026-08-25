@@ -5,7 +5,8 @@
         captions: [],
         sourceWords: [],
         mediaPath: "",
-        selected: {}
+        selected: {},
+        restoredSettings: {}
     };
 
     var $ = function (id) {
@@ -39,8 +40,10 @@
         "wordHighlightScaleInput",
         "layerModeInput",
         "displayModeInput",
-        "fontInput",
-        "fontSizeInput",
+        "baseFontInput",
+        "baseFontSizeInput",
+        "activeFontInput",
+        "activeFontSizeInput",
         "fillColorInput",
         "strokeColorInput",
         "strokeWidthInput",
@@ -54,6 +57,7 @@
         bindEvents();
         render();
         log("Plugin is ready.");
+        loadAfterEffectsFonts();
     }
 
     function bindEvents() {
@@ -90,6 +94,13 @@
             $("projectFileInput").click();
         });
         $("projectFileInput").addEventListener("change", loadProject);
+        $("styleTabBtn").addEventListener("click", function () {
+            showSettingsTab("style");
+        });
+        $("fontTabBtn").addEventListener("click", function () {
+            showSettingsTab("font");
+        });
+        $("refreshFontsBtn").addEventListener("click", loadAfterEffectsFonts);
 
         fields.forEach(function (id) {
             var el = $(id);
@@ -127,8 +138,10 @@
             wordHighlightScale: Number($("wordHighlightScaleInput").value) || 112,
             layerMode: $("layerModeInput").value,
             displayMode: $("displayModeInput").value,
-            font: $("fontInput").value.trim(),
-            fontSize: Number($("fontSizeInput").value) || 64,
+            baseFont: $("baseFontInput").value,
+            baseFontSize: Number($("baseFontSizeInput").value) || 64,
+            activeFont: $("activeFontInput").value,
+            activeFontSize: Number($("activeFontSizeInput").value) || Number($("baseFontSizeInput").value) || 64,
             fillColor: $("fillColorInput").value,
             strokeColor: $("strokeColorInput").value,
             strokeWidth: Number($("strokeWidthInput").value) || 0,
@@ -140,8 +153,8 @@
 
     function styleSettings(settings) {
         return {
-            font: settings.font,
-            fontSize: settings.fontSize,
+            font: settings.baseFont,
+            fontSize: settings.baseFontSize,
             fillColor: settings.fillColor,
             strokeColor: settings.strokeColor,
             strokeWidth: settings.strokeWidth,
@@ -170,6 +183,7 @@
         }
         try {
             var snapshot = JSON.parse(raw);
+            state.restoredSettings = snapshot.settings || {};
             Object.keys(snapshot.settings || {}).forEach(function (id) {
                 var el = $(id);
                 if (!el) {
@@ -181,6 +195,12 @@
                     el.value = snapshot.settings[id];
                 }
             });
+            if (!snapshot.settings.baseFontSizeInput && snapshot.settings.fontSizeInput) {
+                $("baseFontSizeInput").value = snapshot.settings.fontSizeInput;
+            }
+            if (!snapshot.settings.activeFontSizeInput && snapshot.settings.fontSizeInput) {
+                $("activeFontSizeInput").value = snapshot.settings.fontSizeInput;
+            }
             state.mediaPath = snapshot.mediaPath || "";
             if ($("mediaPathInput") && !snapshot.settings.mediaPathInput) {
                 $("mediaPathInput").value = state.mediaPath;
@@ -188,6 +208,78 @@
         } catch (error) {
             log("Failed to read settings: " + error.message);
         }
+    }
+
+    function showSettingsTab(name) {
+        var showFont = name === "font";
+        $("styleTabBtn").classList.toggle("active", !showFont);
+        $("fontTabBtn").classList.toggle("active", showFont);
+        $("styleTabBtn").setAttribute("aria-selected", String(!showFont));
+        $("fontTabBtn").setAttribute("aria-selected", String(showFont));
+        $("styleTabPanel").hidden = showFont;
+        $("fontTabPanel").hidden = !showFont;
+    }
+
+    function normalizedFontLabel(value) {
+        return String(value || "").replace(/^\s+|\s+$/g, "").toLowerCase();
+    }
+
+    function requestedFontValue(fonts, requested) {
+        var target = normalizedFontLabel(requested);
+        if (!target) {
+            return "";
+        }
+        for (var i = 0; i < fonts.length; i += 1) {
+            var font = fonts[i];
+            var labels = [font.postScriptName, font.fullName, font.familyName, font.label];
+            for (var j = 0; j < labels.length; j += 1) {
+                if (normalizedFontLabel(labels[j]) === target) {
+                    return font.postScriptName;
+                }
+            }
+        }
+        return "";
+    }
+
+    function populateFontSelect(select, fonts, emptyLabel, requested, fallback) {
+        select.innerHTML = "";
+        var defaultOption = document.createElement("option");
+        defaultOption.value = "";
+        defaultOption.textContent = emptyLabel;
+        select.appendChild(defaultOption);
+        fonts.forEach(function (font) {
+            var option = document.createElement("option");
+            option.value = font.postScriptName;
+            option.textContent = font.label || font.fullName || font.postScriptName;
+            select.appendChild(option);
+        });
+        select.value = requestedFontValue(fonts, requested) || requestedFontValue(fonts, fallback) || "";
+        select.disabled = false;
+        select.setAttribute("data-fonts-loaded", "true");
+    }
+
+    function loadAfterEffectsFonts() {
+        var baseSelect = $("baseFontInput");
+        var activeSelect = $("activeFontInput");
+        var currentBase = baseSelect.getAttribute("data-fonts-loaded") === "true" ? baseSelect.value :
+            (state.restoredSettings.baseFontInput || state.restoredSettings.fontInput || "");
+        var currentActive = activeSelect.getAttribute("data-fonts-loaded") === "true" ? activeSelect.value :
+            (state.restoredSettings.activeFontInput || "");
+        baseSelect.disabled = true;
+        activeSelect.disabled = true;
+        global.AEBridge.listFonts().then(function (result) {
+            var fonts = result.fonts || [];
+            populateFontSelect(baseSelect, fonts, "After Effects Default", currentBase, result.preferredBase);
+            populateFontSelect(activeSelect, fonts, "Same as Base Font", currentActive, result.preferredActive);
+            persistSettings();
+            log("Loaded " + fonts.length + " After Effects fonts.");
+        }).catch(function (error) {
+            baseSelect.disabled = false;
+            activeSelect.disabled = false;
+            baseSelect.innerHTML = "<option value=\"\">After Effects Default</option>";
+            activeSelect.innerHTML = "<option value=\"\">Same as Base Font</option>";
+            log("Could not load After Effects fonts: " + error.message);
+        });
     }
 
     function render() {
@@ -458,6 +550,16 @@
                 enabled: settings.wordHighlightEnabled,
                 color: settings.wordHighlightColor,
                 scale: settings.wordHighlightScale
+            },
+            fontPreferences: {
+                base: {
+                    name: settings.baseFont,
+                    size: settings.baseFontSize
+                },
+                active: {
+                    name: settings.activeFont,
+                    size: settings.activeFontSize
+                }
             },
             style: styleSettings(settings)
         }).then(function (result) {

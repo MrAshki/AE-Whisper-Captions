@@ -31,6 +31,9 @@
     }
 
     global.AEBridge = {
+        listFonts: function () {
+            return call("listFonts");
+        },
         readTextLayers: function () {
             return call("readTextLayers");
         },

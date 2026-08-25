@@ -216,8 +216,12 @@
 
                 <section class="bottom-grid">
                     <section class="panel-block style-block">
-                        <h2>Style & Import</h2>
-                        <div class="style-grid">
+                        <div class="panel-tabs" role="tablist" aria-label="Subtitle settings">
+                            <button id="styleTabBtn" class="panel-tab active" type="button" role="tab" aria-selected="true" aria-controls="styleTabPanel">Style & Import</button>
+                            <button id="fontTabBtn" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="fontTabPanel">Font Settings</button>
+                        </div>
+                        <div id="styleTabPanel" class="tab-panel" role="tabpanel" aria-labelledby="styleTabBtn">
+                            <div class="style-grid">
                             <label class="field">
                                 <span>Import Mode</span>
                                 <select id="layerModeInput">
@@ -233,14 +237,6 @@
                                     <option value="source-top">Bilingual - Original on Top</option>
                                     <option value="translation-top">Bilingual - Translation on Top</option>
                                 </select>
-                            </label>
-                            <label class="field">
-                                <span>Font</span>
-                                <input id="fontInput" type="text" value="Microsoft YaHei">
-                            </label>
-                            <label class="field">
-                                <span>Font Size</span>
-                                <input id="fontSizeInput" type="number" min="8" max="260" value="64">
                             </label>
                             <label class="field">
                                 <span>Fill</span>
@@ -266,10 +262,36 @@
                                 <input id="shadowInput" type="checkbox" checked>
                                 <span>Shadow</span>
                             </label>
+                            </div>
+                            <div class="button-grid wide-actions">
+                                <button id="importAeBtn" type="button">Import to After Effects</button>
+                                <button id="exportSrtBtn" type="button">Export SRT</button>
+                            </div>
                         </div>
-                        <div class="button-grid wide-actions">
-                            <button id="importAeBtn" type="button">Import to After Effects</button>
-                            <button id="exportSrtBtn" type="button">Export SRT</button>
+                        <div id="fontTabPanel" class="tab-panel" role="tabpanel" aria-labelledby="fontTabBtn" hidden>
+                            <div class="font-grid">
+                                <label class="field">
+                                    <span>Base Font</span>
+                                    <select id="baseFontInput">
+                                        <option value="">Loading After Effects fonts...</option>
+                                    </select>
+                                </label>
+                                <label class="field">
+                                    <span>Base Font Size</span>
+                                    <input id="baseFontSizeInput" type="number" min="8" max="260" step="1" value="64">
+                                </label>
+                                <label class="field">
+                                    <span>Active Font</span>
+                                    <select id="activeFontInput">
+                                        <option value="">Loading After Effects fonts...</option>
+                                    </select>
+                                </label>
+                                <label class="field">
+                                    <span>Active Font Size</span>
+                                    <input id="activeFontSizeInput" type="number" min="8" max="260" step="1" value="64">
+                                </label>
+                            </div>
+                            <button id="refreshFontsBtn" class="secondary-action" type="button">Refresh Fonts</button>
                         </div>
                     </section>
 

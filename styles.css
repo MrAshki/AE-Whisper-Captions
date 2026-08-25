@@ -317,10 +317,53 @@ h2 {
     margin-bottom: 0;
 }
 
+.panel-tabs {
+    display: flex;
+    gap: 2px;
+    margin: -2px 0 12px;
+    border-bottom: 1px solid var(--line);
+}
+
+.panel-tab {
+    min-height: 34px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.panel-tab:hover {
+    border-color: transparent;
+    border-bottom-color: #596271;
+    background: #272d36;
+}
+
+.panel-tab.active {
+    border-bottom-color: var(--accent);
+    background: #202833;
+    color: var(--text);
+}
+
+.tab-panel[hidden] {
+    display: none;
+}
+
 .style-grid {
     display: grid;
     grid-template-columns: repeat(5, minmax(96px, 1fr));
     gap: 8px;
+}
+
+.font-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    gap: 8px;
+}
+
+.secondary-action {
+    min-width: 128px;
 }
 
 .log-block {
@@ -370,5 +413,9 @@ h2 {
 
     .style-grid {
         grid-template-columns: repeat(3, minmax(96px, 1fr));
+    }
+
+    .font-grid {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
     }
 }
