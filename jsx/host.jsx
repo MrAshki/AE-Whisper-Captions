@@ -177,11 +177,11 @@ var AESubtitleAI = AESubtitleAI || {};
     }
 
     function normalColorExpression() {
-        return "var c = thisComp.layer(\"Subtitle Controller\").effect(\"Normal Color\")(\"Color\");\n[c[0], c[1], c[2]];";
+        return "thisComp.layer(\"Subtitle Controller\").effect(\"Normal Color\")(\"Color\");";
     }
 
     function highlightColorExpression() {
-        return "var c = thisComp.layer(\"Subtitle Controller\").effect(\"Highlight Color\")(\"Color\");\n[c[0], c[1], c[2]];";
+        return "thisComp.layer(\"Subtitle Controller\").effect(\"Highlight Color\")(\"Color\");";
     }
 
     function highlightScaleExpression() {
